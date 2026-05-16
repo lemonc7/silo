@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
-	"github.com/lemonc7/silo/tmdb"
+	"github.com/lemonc7/silo/media"
+	"github.com/lemonc7/silo/repo"
+	"github.com/lemonc7/silo/service"
 )
 
 func main() {
@@ -21,15 +22,19 @@ func main() {
 	}
 	defer db.Close()
 
-	client, err := tmdb.NewHTTPClient(cfg.TMDB)
+	client, err := media.NewHTTPClient(cfg.TMDB)
 	if err != nil {
 		panic(err)
 	}
 
-	data, err := client.FetchMedia(context.Background())
-	if err != nil {
+	queries := repo.New(db)
+	svc := service.NewMediaService(queries, client)
+
+	ctx := context.Background()
+	if err := svc.SyncMedia(ctx); err != nil {
 		panic(err)
 	}
-
-	fmt.Println(data)
+	if err := svc.SyncTV(ctx); err != nil {
+		panic(err)
+	}
 }

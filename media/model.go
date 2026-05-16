@@ -1,4 +1,4 @@
-package tmdb
+package media
 
 import (
 	"encoding/json"
@@ -14,10 +14,10 @@ const (
 )
 
 type MediaItem struct {
-	TMDBID     int       `json:"tmdb_id"`
+	TMDBID     int64       `json:"tmdb_id"`
 	Title      string    `json:"title"`
 	Type       MediaType `json:"type"`
-	Year       int       `json:"year"`
+	AirDate    string    `json:"air_date"`
 	PosterPath string    `json:"poster_path"`
 }
 
@@ -30,7 +30,7 @@ func (m MediaItem) String() string {
 }
 
 type rawItem struct {
-	ID           int    `json:"id"`
+	ID           int64    `json:"id"`
 	Title        string `json:"title"`
 	Name         string `json:"name"`
 	ReleaseDate  string `json:"release_date"`
@@ -48,9 +48,9 @@ func (m *MediaItem) UnmarshalJSON(data []byte) error {
 	m.PosterPath = r.PosterPath
 
 	if r.ReleaseDate != "" {
-		m.Year = extractYear(r.ReleaseDate)
+		m.AirDate = r.ReleaseDate
 	} else {
-		m.Year = extractYear(r.FirstAirDate)
+		m.AirDate = r.FirstAirDate
 	}
 
 	// 电影的标题是 title
@@ -72,9 +72,44 @@ func (m *MediaItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type tmdbResponse struct {
+type mediaResponse struct {
 	Page         int         `json:"page"`
 	Results      []MediaItem `json:"results"`
 	TotalPages   int         `json:"total_pages"`
 	TotalResults int         `json:"total_results"`
+}
+
+type seasonResponse struct {
+	Seasons []seasonRaw `json:"seasons"`
+}
+
+type seasonRaw struct {
+	SeasonNumber int64  `json:"season_number"`
+	EpisodeCount int64  `json:"episode_count"`
+	AirDate      string `json:"air_date"`
+	PosterPath   string `json:"poster_path"`
+}
+
+type episodesResponse struct {
+	Episodes []episodeRaw `json:"episodes"`
+}
+
+type episodeRaw struct {
+	EpisodeNumber int64  `json:"episode_number"`
+	AirDate       string `json:"air_date"`
+}
+
+type Season struct {
+	SeriesID     int64  `json:"series_id"`
+	SeasonNumber int64  `json:"season_number"`
+	EpisodeCount int64  `json:"episode_count"`
+	AirDate      string `json:"air_date"`
+	PosterPath   string `json:"poster_path"`
+}
+
+type Episode struct {
+	SeasonID      int64  `json:"season_id"`
+	EpisodeNumber int64  `json:"episode_number"`
+	AirDate       string `json:"air_date"`
+	Status        string `json:"status"`
 }

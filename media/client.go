@@ -1,4 +1,4 @@
-package tmdb
+package media
 
 import (
 	"context"
@@ -17,6 +17,8 @@ import (
 // Client TMDB 数据源接口。
 type Client interface {
 	FetchMedia(ctx context.Context) ([]MediaItem, error)
+	FetchSeasons(ctx context.Context, tmdbID int64) ([]Season, error)
+	FetchEpisodes(ctx context.Context, tmdbID, seasonNum int64) ([]Episode, error)
 }
 
 // HTTPClient 基于 TMDB v3 API + Bearer Token 认证。
@@ -28,6 +30,8 @@ type HTTPClient struct {
 	proxyURL    string
 	client      *http.Client
 }
+
+var _ Client = (*HTTPClient)(nil)
 
 func NewHTTPClient(cfg config.TMDBConfig) (*HTTPClient, error) {
 	c := &HTTPClient{
@@ -107,7 +111,7 @@ func (c *HTTPClient) fetchWatchlist(ctx context.Context, media string) ([]MediaI
 	for page := 1; ; page++ {
 		params.Set("page", strconv.Itoa(page))
 
-		var body tmdbResponse
+		var body mediaResponse
 		if err := c.get(ctx, endpoint, params, &body); err != nil {
 			return nil, fmt.Errorf("fetch watchlist/%s page %d: %w", media, page, err)
 		}
@@ -127,7 +131,56 @@ func (c *HTTPClient) fetchWatchlist(ctx context.Context, media string) ([]MediaI
 	return all, nil
 }
 
-func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values, target *tmdbResponse) error {
+// FetchSeasons 拉取 TV 详情中的季信息。
+func (c *HTTPClient) FetchSeasons(ctx context.Context, tmdbID int64) ([]Season, error) {
+	endpoint := fmt.Sprintf("/tv/%d", tmdbID)
+	params := url.Values{}
+	params.Set("language", "zh-CN")
+
+	var body seasonResponse
+	if err := c.get(ctx, endpoint, params, &body); err != nil {
+		return nil, fmt.Errorf("fetch tv detail %d: %w", tmdbID, err)
+	}
+
+	seasons := make([]Season, 0, len(body.Seasons))
+	for _, s := range body.Seasons {
+		if s.SeasonNumber == 0 {
+			continue
+		}
+		seasons = append(seasons, Season{
+			SeasonNumber: s.SeasonNumber,
+			EpisodeCount: s.EpisodeCount,
+			AirDate:      s.AirDate,
+			PosterPath:   s.PosterPath,
+		})
+	}
+
+	return seasons, nil
+}
+
+// FetchEpisodes 拉取指定季的剧集列表。
+func (c *HTTPClient) FetchEpisodes(ctx context.Context, tmdbID, seasonNum int64) ([]Episode, error) {
+	endpoint := fmt.Sprintf("/tv/%d/season/%d", tmdbID, seasonNum)
+	params := url.Values{}
+	params.Set("language", "zh-CN")
+
+	var body episodesResponse
+	if err := c.get(ctx, endpoint, params, &body); err != nil {
+		return nil, fmt.Errorf("fetch s%02d episodes for tv %d: %w", seasonNum, tmdbID, err)
+	}
+
+	episodes := make([]Episode, 0, len(body.Episodes))
+	for _, ep := range body.Episodes {
+		episodes = append(episodes, Episode{
+			EpisodeNumber: ep.EpisodeNumber,
+			AirDate:       ep.AirDate,
+		})
+	}
+
+	return episodes, nil
+}
+
+func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values, target any) error {
 	reqURL := c.baseURL + endpoint
 	if len(params) > 0 {
 		reqURL += "?" + params.Encode()
@@ -155,12 +208,4 @@ func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values
 	}
 
 	return json.NewDecoder(resp.Body).Decode(target)
-}
-
-func extractYear(date string) int {
-	if len(date) < 4 {
-		return 0
-	}
-	y, _ := strconv.Atoi(date[:4])
-	return y
 }
