@@ -19,8 +19,10 @@ type ServerConfig struct {
 }
 
 type TMDBConfig struct {
-	BearerToken string `yaml:"bearer_token" env:"TMDB_BEARER_TOKEN"`
-	AccountID   string `yaml:"account_id" env:"TMDB_ACCOUNT_ID"`
+	BearerToken string            `yaml:"bearer_token" env:"TMDB_BEARER_TOKEN"`
+	AccountID   string            `yaml:"account_id" env:"TMDB_ACCOUNT_ID"`
+	Proxy       string            `yaml:"proxy" env:"TMDB_PROXY"`
+	Hosts       map[string]string `yaml:"hosts"`
 }
 
 type AppConfig struct {

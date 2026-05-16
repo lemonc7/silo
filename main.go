@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
+	"github.com/lemonc7/silo/tmdb"
 )
 
 func main() {
@@ -15,6 +19,17 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	defer db.Close()
+
+	client, err := tmdb.NewHTTPClient(cfg.TMDB)
+	if err != nil {
+		panic(err)
+	}
+
+	data, err := client.FetchMedia(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(data)
 }
