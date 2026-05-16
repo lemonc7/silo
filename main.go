@@ -1,9 +1,17 @@
 package main
 
-import "github.com/lemonc7/silo/database"
+import (
+	"github.com/lemonc7/silo/config"
+	"github.com/lemonc7/silo/database"
+)
 
 func main() {
-	db, err := database.NewDB("./data/data.db")
+	cfg, err := config.LoadConfig("./config/config.yml")
+	if err != nil {
+		panic(err)
+	}
+
+	db, err := database.NewDB("./data/data.db", cfg.Database)
 	if err != nil {
 		panic(err)
 	}

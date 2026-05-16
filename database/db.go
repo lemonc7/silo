@@ -4,19 +4,27 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/lemonc7/silo/config"
 	_ "modernc.org/sqlite"
 )
 
 //go:embed migrate/*.sql
 var migrationFS embed.FS
 
-func NewDB(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", path)
-	db, err := sql.Open("sqlite", dsn)
+func NewDB(path string, cfg config.DatabaseConfig) (*sql.DB, error) {
+	// 自动创建父目录
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("create db dir: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", cfg.DSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -27,6 +35,10 @@ func NewDB(path string) (*sql.DB, error) {
 			db.Close()
 		}
 	}()
+
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping db: %w", err)
