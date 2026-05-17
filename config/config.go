@@ -10,12 +10,12 @@ import (
 type Config struct {
 	Server   ServerConfig   `yaml:"server"`
 	TMDB     TMDBConfig     `yaml:"tmdb"`
-	App      AppConfig      `yaml:"app"`
 	Database DatabaseConfig `yaml:"database"`
+	Resource ResourceConfig `yaml:"resource"`
 }
 
 type ServerConfig struct {
-	TZ   string `yaml:"tz" env:"TZ" env-default:"Asia/Shanghai"`
+	TZ string `yaml:"tz" env:"TZ" env-default:"Asia/Shanghai"`
 }
 
 type TMDBConfig struct {
@@ -23,12 +23,6 @@ type TMDBConfig struct {
 	AccountID   string            `yaml:"account_id" env:"TMDB_ACCOUNT_ID"`
 	Proxy       string            `yaml:"proxy" env:"TMDB_PROXY"`
 	Hosts       map[string]string `yaml:"hosts"`
-}
-
-type AppConfig struct {
-	URL      string `yaml:"url" env:"APP_URL"`
-	Username string `yaml:"username" env:"APP_USERNAME"`
-	Password string `yaml:"password" env:"APP_PASSWORD"`
 }
 
 type DatabaseConfig struct {
@@ -50,6 +44,13 @@ type DatabaseConfig struct {
 func (d *DatabaseConfig) DSN(path string) string {
 	return fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(%d)&_pragma=synchronous(%d)&_pragma=cache_size(%d)",
 		path, d.BusyTimeout, d.Synchronous, d.CacheSize)
+}
+
+type ResourceConfig struct {
+	Domain    string  `yaml:"domain" env:"BT_DOMAIN"`
+	Username  string  `yaml:"username" env:"BT_USERNAME"`
+	Password  string  `yaml:"password" env:"BT_PASSWORD"`
+	MinSizeGB float64 `yaml:"min_size_gb" env:"BT_MIN_SIZE_GB" env-default:"1.0"`
 }
 
 func LoadConfig(path string) (*Config, error) {

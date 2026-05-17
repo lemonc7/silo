@@ -22,7 +22,7 @@ type MediaItem struct {
 }
 
 func (m MediaItem) String() string {
-	jsonData, err := json.MarshalIndent(m, "", "  ")
+	jsonData, err := json.MarshalIndent(&m, "", "  ")
 	if err != nil {
 		return ""
 	}
