@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	TMDB     TMDBConfig     `yaml:"tmdb"`
-	Database DatabaseConfig `yaml:"database"`
-	Resource ResourceConfig `yaml:"resource"`
+	Server     ServerConfig     `yaml:"server"`
+	TMDB       TMDBConfig       `yaml:"tmdb"`
+	Database   DatabaseConfig   `yaml:"database"`
+	Resource   ResourceConfig   `yaml:"resource"`
+	Downloader DownloaderConfig `yaml:"downloader"`
 }
 
 type ServerConfig struct {
@@ -51,6 +52,13 @@ type ResourceConfig struct {
 	Username  string  `yaml:"username" env:"BT_USERNAME"`
 	Password  string  `yaml:"password" env:"BT_PASSWORD"`
 	MinSizeGB float64 `yaml:"min_size_gb" env:"BT_MIN_SIZE_GB" env-default:"1.0"`
+}
+
+type DownloaderConfig struct {
+	Host     string `yaml:"host" env:"QB_URL"`
+	Port     int    `yaml:"port" env:"QB_PORT"`
+	Username string `yaml:"username" env:"QB_USERNAME"`
+	Password string `yaml:"password" env:"QB_PASSWORD"`
 }
 
 func LoadConfig(path string) (*Config, error) {
