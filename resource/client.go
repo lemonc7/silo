@@ -27,11 +27,11 @@ func (c *BTClient) Login() error {
 	l := launcher.New()
 	devUrl, err := l.Launch()
 	if err != nil {
-		return fmt.Errorf("[bt] 启动浏览器: %w", err)
+		return fmt.Errorf("启动浏览器: %w", err)
 	}
 	c.browser = rod.New().NoDefaultDevice().ControlURL(devUrl)
 	if err := c.browser.Connect(); err != nil {
-		return fmt.Errorf("[bt] 连接浏览器: %w", err)
+		return fmt.Errorf("连接浏览器: %w", err)
 	}
 
 	cookies, err := c.loadCookies()
@@ -57,17 +57,17 @@ func (c *BTClient) Login() error {
 
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
 	if err != nil {
-		return fmt.Errorf("[bt] create verify page: %w", err)
+		return fmt.Errorf("验证登录: %w", err)
 	}
 	defer page.Close()
 
 	if err := page.WaitLoad(); err != nil {
-		return fmt.Errorf("[bt] wait homepage load: %w", err)
+		return fmt.Errorf("等待主页加载完成: %w", err)
 	}
 
 	info, err := page.Info()
 	if err != nil {
-		return fmt.Errorf("[bt] get page info: %w", err)
+		return fmt.Errorf("页面信息: %w", err)
 	}
 
 	if info.Title != "首页" {
@@ -77,6 +77,40 @@ func (c *BTClient) Login() error {
 
 	fmt.Printf("[bt] 登录成功")
 	return nil
+}
+
+func (c *BTClient) Search(query string) ([]Torrent, error) {
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
+	if err != nil {
+		return nil, fmt.Errorf("打开主页: %w", err)
+	}
+	defer page.Close()
+
+	popupButton, err := page.Element("div.popup-close")
+	if err != nil {
+		return nil, fmt.Errorf("弹窗按钮: %w", err)
+	}
+	if err := popupButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return nil, fmt.Errorf("关闭弹窗: %w", err)
+	}
+
+	search, err := page.Element("#q")
+	if err != nil {
+		return nil, fmt.Errorf("搜索框: %w", err)
+	}
+	if err := search.Input(query); err != nil {
+		return nil, fmt.Errorf("输入搜索词: %w", err)
+	}
+
+	button, err := page.Element("#s_form > button")
+	if err != nil {
+		return nil, fmt.Errorf("搜索按钮: %w", err)
+	}
+	if err := button.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return nil, fmt.Errorf("点击搜索: %w", err)
+	}
+
+	return nil, nil
 }
 
 func (c *BTClient) Close() {
@@ -127,10 +161,10 @@ func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
 		})
 	}
 	if len(params) == 0 {
-		return fmt.Errorf("[bt] 设置的 cookie 是空的")
+		return fmt.Errorf("设置的 cookie 是空的")
 	}
 	if err := c.browser.SetCookies(params); err != nil {
-		return fmt.Errorf("[bt] 设置 cookie: %w", err)
+		return fmt.Errorf("设置 cookie: %w", err)
 	}
 	return nil
 }
@@ -138,7 +172,7 @@ func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
 func (c *BTClient) fullLogin() error {
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL + "/user/login"})
 	if err != nil {
-		return fmt.Errorf("page: %w", err)
+		return fmt.Errorf("打开登录页: %w", err)
 	}
 	defer page.Close()
 
@@ -147,7 +181,7 @@ func (c *BTClient) fullLogin() error {
 		return fmt.Errorf("用户名输入框: %w", err)
 	}
 	if err := usernameEl.Input(c.cfg.Username); err != nil {
-		return err
+		return fmt.Errorf("输入用户名: %w", err)
 	}
 
 	passwordEl, err := page.Element(`input[name="password"]`)
@@ -155,7 +189,7 @@ func (c *BTClient) fullLogin() error {
 		return fmt.Errorf("密码输入框: %w", err)
 	}
 	if err := passwordEl.Input(c.cfg.Password); err != nil {
-		return err
+		return fmt.Errorf("输入密码: %w", err)
 	}
 
 	loginBtn, err := page.Element("#button")
@@ -163,12 +197,7 @@ func (c *BTClient) fullLogin() error {
 		return fmt.Errorf("登录按钮: %w", err)
 	}
 	if err := loginBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return err
-	}
-
-	popupBtn, err := page.Element("div.popup-close")
-	if err == nil {
-		popupBtn.Click(proto.InputMouseButtonLeft, 1)
+		return fmt.Errorf("点击登录: %w", err)
 	}
 
 	cookies, err := page.Cookies(nil)
