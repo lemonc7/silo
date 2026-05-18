@@ -85,10 +85,10 @@ func (c *BTClient) doLogin() (*sessionCookies, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开登录页: %w", err)
 	}
-	defer page.Close()
+	// defer page.Close()
 
 	// 填写表单
-	usernameEl, err := page.ElementR("input", "请输入用户名")
+	usernameEl, err := page.Element(`input[name="username"]`)
 	if err != nil {
 		return nil, fmt.Errorf("获取用户名输入框: %w", err)
 	}
@@ -96,7 +96,7 @@ func (c *BTClient) doLogin() (*sessionCookies, error) {
 		return nil, fmt.Errorf("输入用户名: %w", err)
 	}
 
-	passwordEl, err := page.ElementR("input", "请输入密码")
+	passwordEl, err := page.Element(`input[name="password"]`)
 	if err != nil {
 		return nil, fmt.Errorf("获取密码输入框: %w", err)
 	}
@@ -111,6 +111,15 @@ func (c *BTClient) doLogin() (*sessionCookies, error) {
 	}
 	if err := loginBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
 		return nil, fmt.Errorf("点击登录: %w", err)
+	}
+
+	// 关闭弹窗
+	popupButton, err := page.Element("div.popup-close")
+	if err != nil {
+		return nil, fmt.Errorf("获取关闭弹窗按钮: %w", err)
+	}
+	if err := popupButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return nil, fmt.Errorf("关闭弹窗: %w", err)
 	}
 
 	return nil, nil
