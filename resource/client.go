@@ -1,7 +1,10 @@
 package resource
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
@@ -11,52 +14,67 @@ import (
 
 const cookieFile = "bt_cookies.json"
 
-type sessionCookies struct {
-	BrowserVerified string `json:"browser_verified"`
-	PHPSessID       string `json:"PHPSESSID"`
-	AppAuth         string `json:"app_auth"`
-}
-
 type BTClient struct {
 	cfg     config.ResourceConfig
-	debug   bool
 	browser *rod.Browser
-	cookies *sessionCookies
 }
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
 	return &BTClient{cfg: cfg}
 }
 
-func (c *BTClient) Debug() *BTClient {
-	c.debug = true
-	return c
-}
-
 func (c *BTClient) Login() error {
-	// if sc, err := c.loadCookies(); err == nil {
-	// 	c.cookies = sc
-	// 	if err := c.launchAndVerify(); err == nil {
-	// 		fmt.Println("[bt] 使用缓存 Cookie")
-	// 		return nil
-	// 	}
-	// 	fmt.Printf("[bt] 缓存失效: %v\n", err)
-	// 	c.browser.Close()
-	// }
-
-	if err := c.launch(); err != nil {
-		return fmt.Errorf("启动浏览器: %w", err)
-	}
-
-	_, err := c.doLogin()
+	l := launcher.New()
+	devUrl, err := l.Launch()
 	if err != nil {
-		c.Close()
-		return err
+		return fmt.Errorf("[bt] 启动浏览器: %w", err)
+	}
+	c.browser = rod.New().NoDefaultDevice().ControlURL(devUrl)
+	if err := c.browser.Connect(); err != nil {
+		return fmt.Errorf("[bt] 连接浏览器: %w", err)
 	}
 
-	// c.cookies = sc
-	// c.saveCookies(sc)
-	fmt.Println("[bt] 登录成功")
+	cookies, err := c.loadCookies()
+	if err != nil {
+		fmt.Printf("[bt] 加载 cookie 失败: %v\n", err)
+	}
+	if len(cookies) == 0 {
+		return c.fullLogin()
+	}
+
+	if err := c.injectCookies(cookies); err != nil {
+		return c.fullLogin()
+	}
+
+	if c.isExpired(cookies, "app_auth") {
+		fmt.Println("[bt] app_auth 过期，重新登录")
+		return c.fullLogin()
+	}
+	if c.isExpired(cookies, "browser_verified") {
+		fmt.Println("[bt] browser_verified 过期，刷新 POW")
+		return c.refreshPOW()
+	}
+
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
+	if err != nil {
+		return fmt.Errorf("[bt] create verify page: %w", err)
+	}
+	defer page.Close()
+
+	if err := page.WaitLoad(); err != nil {
+		return fmt.Errorf("[bt] wait homepage load: %w", err)
+	}
+
+	info, err := page.Info()
+	if err != nil {
+		return fmt.Errorf("[bt] get page info: %w", err)
+	}
+
+	if info.Title != "主页" {
+		fmt.Printf("[bt] unexpected title, maybe cookies is invalid, to login page")
+		return c.fullLogin()
+	}
+
 	return nil
 }
 
@@ -66,61 +84,124 @@ func (c *BTClient) Close() {
 	}
 }
 
-func (c *BTClient) launch() error {
-	l := launcher.New()
-
-	devURL, err := l.Launch()
+func (c *BTClient) loadCookies() ([]*proto.NetworkCookie, error) {
+	data, err := os.ReadFile(cookieFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	c.browser = rod.New().NoDefaultDevice().ControlURL(devURL)
-	return c.browser.Connect()
+	var cookies []*proto.NetworkCookie
+	if err := json.Unmarshal(data, &cookies); err != nil {
+		return nil, err
+	}
+	return cookies, nil
 }
 
-func (c *BTClient) doLogin() (*sessionCookies, error) {
-	page, err := c.browser.Page(proto.TargetCreateTarget{
-		URL: c.cfg.URL + "/user/login",
-	})
+func (c *BTClient) saveCookies(cookies []*proto.NetworkCookie) {
+	data, err := json.MarshalIndent(cookies, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("打开登录页: %w", err)
+		fmt.Printf("[bt] save cookies: marshal: %v\n", err)
+		return
 	}
-	// defer page.Close()
+	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
+		fmt.Printf("[bt] save cookies: write: %v\n", err)
+	}
+}
 
-	// 填写表单
+func (c *BTClient) isExpired(cookies []*proto.NetworkCookie, name string) bool {
+	for _, ck := range cookies {
+		if ck.Name == name && ck.Expires > 0 && int64(ck.Expires) < time.Now().Unix() {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *BTClient) injectCookies(cookies []*proto.NetworkCookie) error {
+	var params []*proto.NetworkCookieParam
+	for _, ck := range cookies {
+		params = append(params, &proto.NetworkCookieParam{
+			Name:  ck.Name,
+			Value: ck.Value,
+		})
+	}
+	if len(params) == 0 {
+		return fmt.Errorf("[bt] 注入的 cookie 是空的")
+	}
+
+	if err := c.browser.SetCookies(params); err != nil {
+		return fmt.Errorf("[bt] 注入 cookie: %w", err)
+	}
+
+	return nil
+}
+
+func (c *BTClient) fullLogin() error {
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL + "/user/login"})
+	if err != nil {
+		return fmt.Errorf("page: %w", err)
+	}
+	defer page.Close()
+
 	usernameEl, err := page.Element(`input[name="username"]`)
 	if err != nil {
-		return nil, fmt.Errorf("获取用户名输入框: %w", err)
+		return fmt.Errorf("用户名输入框: %w", err)
 	}
 	if err := usernameEl.Input(c.cfg.Username); err != nil {
-		return nil, fmt.Errorf("输入用户名: %w", err)
+		return err
 	}
 
 	passwordEl, err := page.Element(`input[name="password"]`)
 	if err != nil {
-		return nil, fmt.Errorf("获取密码输入框: %w", err)
+		return fmt.Errorf("密码输入框: %w", err)
 	}
 	if err := passwordEl.Input(c.cfg.Password); err != nil {
-		return nil, fmt.Errorf("输入密码: %w", err)
+		return err
 	}
 
-	// 点击登录
 	loginBtn, err := page.Element("#button")
 	if err != nil {
-		return nil, fmt.Errorf("获取登录按钮: %w", err)
+		return fmt.Errorf("登录按钮: %w", err)
 	}
 	if err := loginBtn.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return nil, fmt.Errorf("点击登录: %w", err)
+		return err
 	}
 
-	// 关闭弹窗
-	popupButton, err := page.Element("div.popup-close")
+	popupBtn, err := page.Element("div.popup-close")
+	if err == nil {
+		popupBtn.Click(proto.InputMouseButtonLeft, 1)
+	}
+
+	cookies, err := c.browser.GetCookies()
 	if err != nil {
-		return nil, fmt.Errorf("获取关闭弹窗按钮: %w", err)
-	}
-	if err := popupButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return nil, fmt.Errorf("关闭弹窗: %w", err)
+		return fmt.Errorf("获取 cookie: %w", err)
 	}
 
-	return nil, nil
+	if err := c.injectCookies(cookies); err != nil {
+		return fmt.Errorf("[bt] 注入 cookie: %w", err)
+	}
+	c.saveCookies(cookies)
+
+	fmt.Println("[bt] 登录成功，cookie 已缓存")
+	return nil
+}
+
+func (c *BTClient) refreshPOW() error {
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
+	if err != nil {
+		return err
+	}
+	defer page.Close()
+
+	cookies, err := c.browser.GetCookies()
+	if err != nil {
+		return err
+	}
+
+	if err := c.injectCookies(cookies); err != nil {
+		return err
+	}
+
+	c.saveCookies(cookies)
+	fmt.Println("[bt] POW 刷新完成")
+	return nil
 }
