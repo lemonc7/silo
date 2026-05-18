@@ -3,6 +3,7 @@ package media
 import (
 	"encoding/json"
 	"slices"
+	"time"
 )
 
 type MediaType string
@@ -14,29 +15,11 @@ const (
 )
 
 type MediaItem struct {
-	TMDBID     int64       `json:"tmdb_id"`
-	Title      string    `json:"title"`
-	Type       MediaType `json:"type"`
-	AirDate    string    `json:"air_date"`
-	PosterPath string    `json:"poster_path"`
-}
-
-func (m MediaItem) String() string {
-	jsonData, err := json.MarshalIndent(&m, "", "  ")
-	if err != nil {
-		return ""
-	}
-	return string(jsonData)
-}
-
-type rawItem struct {
-	ID           int64    `json:"id"`
-	Title        string `json:"title"`
-	Name         string `json:"name"`
-	ReleaseDate  string `json:"release_date"`
-	FirstAirDate string `json:"first_air_date"`
-	PosterPath   string `json:"poster_path"`
-	GenreIDs     []int  `json:"genre_ids"`
+	TmdbID     int64      `json:"tmdb_id"`
+	Title      string     `json:"title"`
+	Type       MediaType  `json:"type"`
+	AirDate    *time.Time `json:"air_date"`
+	PosterPath string     `json:"poster_path"`
 }
 
 func (m *MediaItem) UnmarshalJSON(data []byte) error {
@@ -44,13 +27,13 @@ func (m *MediaItem) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &r); err != nil {
 		return err
 	}
-	m.TMDBID = r.ID
+	m.TmdbID = r.ID
 	m.PosterPath = r.PosterPath
 
 	if r.ReleaseDate != "" {
-		m.AirDate = r.ReleaseDate
+		m.AirDate = parseDate(r.ReleaseDate)
 	} else {
-		m.AirDate = r.FirstAirDate
+		m.AirDate = parseDate(r.FirstAirDate)
 	}
 
 	// 电影的标题是 title
@@ -72,6 +55,40 @@ func (m *MediaItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+type Season struct {
+	SeasonNumber int64      `json:"season_number"`
+	EpisodeCount int64      `json:"episode_count"`
+	AirDate      *time.Time `json:"air_date"`
+	PosterPath   string     `json:"poster_path"`
+}
+
+func (s *Season) UnmarshalJSON(data []byte) error {
+	var r seasonRaw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	s.SeasonNumber = r.SeasonNumber
+	s.EpisodeCount = r.EpisodeCount
+	s.AirDate = parseDate(r.AirDate)
+	s.PosterPath = r.PosterPath
+	return nil
+}
+
+type Episode struct {
+	EpisodeNumber int64      `json:"episode_number"`
+	AirDate       *time.Time `json:"air_date"`
+}
+
+func (s *Episode) UnmarshalJSON(data []byte) error {
+	var r episodeRaw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	s.EpisodeNumber = r.EpisodeNumber
+	s.AirDate = parseDate(r.AirDate)
+	return nil
+}
+
 type mediaResponse struct {
 	Page         int         `json:"page"`
 	Results      []MediaItem `json:"results"`
@@ -80,7 +97,23 @@ type mediaResponse struct {
 }
 
 type seasonResponse struct {
-	Seasons []seasonRaw `json:"seasons"`
+	Status  string   `json:"status"`
+	Seasons []Season `json:"seasons"`
+}
+
+type episodesResponse struct {
+	Episodes []Episode `json:"episodes"`
+}
+
+type rawItem struct {
+	ID           int64  `json:"id"`
+	Title        string `json:"title"`
+	Name         string `json:"name"`
+	ReleaseDate  string `json:"release_date"`
+	FirstAirDate string `json:"first_air_date"`
+	PosterPath   string `json:"poster_path"`
+	GenreIDs     []int  `json:"genre_ids"`
+	Status       string `json:"status"`
 }
 
 type seasonRaw struct {
@@ -90,26 +123,15 @@ type seasonRaw struct {
 	PosterPath   string `json:"poster_path"`
 }
 
-type episodesResponse struct {
-	Episodes []episodeRaw `json:"episodes"`
-}
-
 type episodeRaw struct {
 	EpisodeNumber int64  `json:"episode_number"`
 	AirDate       string `json:"air_date"`
 }
 
-type Season struct {
-	SeriesID     int64  `json:"series_id"`
-	SeasonNumber int64  `json:"season_number"`
-	EpisodeCount int64  `json:"episode_count"`
-	AirDate      string `json:"air_date"`
-	PosterPath   string `json:"poster_path"`
-}
-
-type Episode struct {
-	SeasonID      int64  `json:"season_id"`
-	EpisodeNumber int64  `json:"episode_number"`
-	AirDate       string `json:"air_date"`
-	Status        string `json:"status"`
+func parseDate(date string) *time.Time {
+	t, err := time.Parse(time.DateOnly, date)
+	if err != nil {
+		return nil
+	}
+	return &t
 }

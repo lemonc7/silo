@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -33,7 +34,7 @@ type HTTPClient struct {
 
 var _ Client = (*HTTPClient)(nil)
 
-func NewHTTPClient(cfg config.TMDBConfig) (*HTTPClient, error) {
+func NewHTTPClient(cfg config.TMDBConfig) *HTTPClient {
 	c := &HTTPClient{
 		bearerToken: cfg.BearerToken,
 		accountID:   cfg.AccountID,
@@ -44,7 +45,7 @@ func NewHTTPClient(cfg config.TMDBConfig) (*HTTPClient, error) {
 	c.buildClient()
 
 	log.Printf("[tmdb] ready: account_id=%s", c.accountID)
-	return c, nil
+	return c
 }
 
 func (c *HTTPClient) buildClient() {
@@ -142,18 +143,10 @@ func (c *HTTPClient) FetchSeasons(ctx context.Context, tmdbID int64) ([]Season, 
 		return nil, fmt.Errorf("fetch tv detail %d: %w", tmdbID, err)
 	}
 
-	seasons := make([]Season, 0, len(body.Seasons))
-	for _, s := range body.Seasons {
-		if s.SeasonNumber == 0 {
-			continue
-		}
-		seasons = append(seasons, Season{
-			SeasonNumber: s.SeasonNumber,
-			EpisodeCount: s.EpisodeCount,
-			AirDate:      s.AirDate,
-			PosterPath:   s.PosterPath,
-		})
-	}
+	// 删除特殊季S00
+	seasons := slices.DeleteFunc(body.Seasons, func(s Season) bool {
+		return s.SeasonNumber == 0
+	})
 
 	return seasons, nil
 }
@@ -169,15 +162,7 @@ func (c *HTTPClient) FetchEpisodes(ctx context.Context, tmdbID, seasonNum int64)
 		return nil, fmt.Errorf("fetch s%02d episodes for tv %d: %w", seasonNum, tmdbID, err)
 	}
 
-	episodes := make([]Episode, 0, len(body.Episodes))
-	for _, ep := range body.Episodes {
-		episodes = append(episodes, Episode{
-			EpisodeNumber: ep.EpisodeNumber,
-			AirDate:       ep.AirDate,
-		})
-	}
-
-	return episodes, nil
+	return body.Episodes, nil
 }
 
 func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values, target any) error {

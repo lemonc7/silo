@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/lemonc7/silo/media"
 	"github.com/lemonc7/silo/repo"
@@ -26,13 +27,13 @@ func (s *MediaService) SyncMedia(ctx context.Context) error {
 
 	for _, item := range items {
 		if _, err := s.repo.UpsertMedia(ctx, repo.UpsertMediaParams{
-			TmdbID:     item.TMDBID,
+			TmdbID:     item.TmdbID,
 			Type:       string(item.Type),
 			Title:      item.Title,
 			AirDate:    item.AirDate,
 			PosterPath: item.PosterPath,
 		}); err != nil {
-			return fmt.Errorf("upsert media %d: %w", item.TMDBID, err)
+			return fmt.Errorf("upsert media %d: %w", item.TmdbID, err)
 		}
 	}
 
@@ -40,68 +41,61 @@ func (s *MediaService) SyncMedia(ctx context.Context) error {
 	return nil
 }
 
-func (s *MediaService) SyncTV(ctx context.Context) error {
-	mediaList, err := s.repo.GetTVMedia(ctx)
+func (s *MediaService) SyncSeason(ctx context.Context) error {
+	tvs, err := s.repo.GetOutOfSyncTVs(ctx)
 	if err != nil {
-		return fmt.Errorf("query tv media: %w", err)
+		return fmt.Errorf("get out of sync tv: %w", err)
 	}
 
-	for _, m := range mediaList {
-		seasons, err := s.client.FetchSeasons(ctx, m.TmdbID)
+	for _, t := range tvs {
+		seasons, err := s.client.FetchSeasons(ctx, t.TmdbID)
 		if err != nil {
-			log.Printf("[sync] skip tv %d: fetch seasons: %v", m.TmdbID, err)
+			log.Printf("[sync] skip tv %d: fetch seasons: %v", t.TmdbID, err)
 			continue
 		}
 
 		for _, season := range seasons {
-			count, err := s.repo.CountEpisodes(ctx, repo.CountEpisodesParams{
-				SeriesID:     m.ID,
-				SeasonNumber: season.SeasonNumber,
-			})
-			if err != nil {
-				return fmt.Errorf("count episodes: %w", err)
-			}
-
-			if count == season.EpisodeCount {
-				continue
-			}
-
-			episodes, err := s.client.FetchEpisodes(ctx, m.TmdbID, season.SeasonNumber)
-			if err != nil {
-				log.Printf("[sync] skip tv %d s%02d: fetch episodes: %v", m.TmdbID, season.SeasonNumber, err)
-				continue
-			}
-
-			if _, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
-				SeriesID:     m.ID,
+			_, err := s.repo.UpsertSeason(ctx, repo.UpsertSeasonParams{
+				SeriesID:     t.ID,
 				SeasonNumber: season.SeasonNumber,
 				EpisodeCount: season.EpisodeCount,
 				AirDate:      season.AirDate,
 				PosterPath:   season.PosterPath,
-			}); err != nil {
-				return fmt.Errorf("upsert season: %w", err)
-			}
-
-			seasonID, err := s.repo.GetSeasonID(ctx, repo.GetSeasonIDParams{
-				SeriesID:     m.ID,
-				SeasonNumber: season.SeasonNumber,
 			})
 			if err != nil {
-				return fmt.Errorf("get season id: %w", err)
+				log.Printf("[sync] skip tv %d: upsert season(%d): %v", t.TmdbID, season.SeasonNumber, err)
 			}
-
-			for _, ep := range episodes {
-				if _, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
-					SeasonID:      seasonID,
-					EpisodeNumber: ep.EpisodeNumber,
-					AirDate:       ep.AirDate,
-				}); err != nil {
-					return fmt.Errorf("upsert episode: %w", err)
-				}
-			}
-			log.Printf("[sync] tv %d s%02d: %d episodes", m.TmdbID, season.SeasonNumber, len(episodes))
 		}
+		time.Sleep(200 * time.Millisecond)
 	}
 
+	return nil
+}
+
+func (s *MediaService) SyncEpisode(ctx context.Context) error {
+	seasons, err := s.repo.GetOutOfSyncSeasons(ctx)
+	if err != nil {
+		return fmt.Errorf("get out of sync seasons: %w", err)
+	}
+
+	for _, se := range seasons {
+		episodes, err := s.client.FetchEpisodes(ctx, se.TmdbID, se.SeasonNumber)
+		if err != nil {
+			log.Printf("[sync] skip season %d: fetch episodes: %v", se.ID, err)
+			continue
+		}
+
+		for _, ep := range episodes {
+			if _, err := s.repo.UpsertEpisode(ctx, repo.UpsertEpisodeParams{
+				SeasonID:      se.ID,
+				EpisodeNumber: ep.EpisodeNumber,
+				AirDate:       ep.AirDate,
+			}); err != nil {
+				log.Printf("[sync] skip episode %d: upsert: %v", ep.EpisodeNumber, err)
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
 	return nil
 }
