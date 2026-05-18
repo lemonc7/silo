@@ -42,7 +42,7 @@ func (c *BTClient) Login() error {
 		return c.fullLogin()
 	}
 
-	if err := c.injectCookies(cookies); err != nil {
+	if err := c.setCookies(cookies); err != nil {
 		return c.fullLogin()
 	}
 
@@ -70,11 +70,12 @@ func (c *BTClient) Login() error {
 		return fmt.Errorf("[bt] get page info: %w", err)
 	}
 
-	if info.Title != "主页" {
-		fmt.Printf("[bt] unexpected title, maybe cookies is invalid, to login page")
+	if info.Title != "首页" {
+		fmt.Printf("[bt] 标题不对: %s, 也许 cookie 已经失效，重新登录", info.Title)
 		return c.fullLogin()
 	}
 
+	fmt.Printf("[bt] 登录成功")
 	return nil
 }
 
@@ -99,11 +100,11 @@ func (c *BTClient) loadCookies() ([]*proto.NetworkCookie, error) {
 func (c *BTClient) saveCookies(cookies []*proto.NetworkCookie) {
 	data, err := json.MarshalIndent(cookies, "", "  ")
 	if err != nil {
-		fmt.Printf("[bt] save cookies: marshal: %v\n", err)
+		fmt.Printf("[bt] 解码 cookie: %v\n", err)
 		return
 	}
 	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
-		fmt.Printf("[bt] save cookies: write: %v\n", err)
+		fmt.Printf("[bt] 写入 cookie 文件: %v\n", err)
 	}
 }
 
@@ -116,22 +117,21 @@ func (c *BTClient) isExpired(cookies []*proto.NetworkCookie, name string) bool {
 	return false
 }
 
-func (c *BTClient) injectCookies(cookies []*proto.NetworkCookie) error {
+func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
 	var params []*proto.NetworkCookieParam
 	for _, ck := range cookies {
 		params = append(params, &proto.NetworkCookieParam{
-			Name:  ck.Name,
-			Value: ck.Value,
+			Name:   ck.Name,
+			Value:  ck.Value,
+			Domain: ck.Domain,
 		})
 	}
 	if len(params) == 0 {
-		return fmt.Errorf("[bt] 注入的 cookie 是空的")
+		return fmt.Errorf("[bt] 设置的 cookie 是空的")
 	}
-
 	if err := c.browser.SetCookies(params); err != nil {
-		return fmt.Errorf("[bt] 注入 cookie: %w", err)
+		return fmt.Errorf("[bt] 设置 cookie: %w", err)
 	}
-
 	return nil
 }
 
@@ -171,13 +171,13 @@ func (c *BTClient) fullLogin() error {
 		popupBtn.Click(proto.InputMouseButtonLeft, 1)
 	}
 
-	cookies, err := c.browser.GetCookies()
+	cookies, err := page.Cookies(nil)
 	if err != nil {
 		return fmt.Errorf("获取 cookie: %w", err)
 	}
 
-	if err := c.injectCookies(cookies); err != nil {
-		return fmt.Errorf("[bt] 注入 cookie: %w", err)
+	if err := c.setCookies(cookies); err != nil {
+		return err
 	}
 	c.saveCookies(cookies)
 
@@ -192,12 +192,12 @@ func (c *BTClient) refreshPOW() error {
 	}
 	defer page.Close()
 
-	cookies, err := c.browser.GetCookies()
+	cookies, err := page.Cookies(nil)
 	if err != nil {
 		return err
 	}
 
-	if err := c.injectCookies(cookies); err != nil {
+	if err := c.setCookies(cookies); err != nil {
 		return err
 	}
 
