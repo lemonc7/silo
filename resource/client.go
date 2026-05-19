@@ -18,6 +18,7 @@ const cookieFile = "bt_cookies.json"
 type BTClient struct {
 	cfg     config.ResourceConfig
 	browser *rod.Browser
+	debug   bool
 }
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
@@ -25,14 +26,8 @@ func NewBTClient(cfg config.ResourceConfig) *BTClient {
 }
 
 func (c *BTClient) EnsureSession(ctx context.Context) error {
-	l := launcher.New()
-	devUrl, err := l.Launch()
-	if err != nil {
-		return fmt.Errorf("启动浏览器: %w", err)
-	}
-	c.browser = rod.New().NoDefaultDevice().ControlURL(devUrl)
-	if err := c.browser.Connect(); err != nil {
-		return fmt.Errorf("连接浏览器: %w", err)
+	if err := c.launch(ctx); err != nil {
+		return err
 	}
 
 	cookies, err := loadCookies()
@@ -61,6 +56,53 @@ func (c *BTClient) Close() {
 	if c.browser != nil {
 		c.browser.Close()
 	}
+}
+
+func (c *BTClient) Debug() {
+	c.debug = true
+}
+
+func (c *BTClient) launch(ctx context.Context) error {
+	if c.browser != nil {
+		return nil
+	}
+	l := launcher.New().
+		Set("disable-gpu").
+		Set("disable-blink-features", "AutomationControlled")
+
+	if !c.debug {
+		l = l.Headless(true)
+	}
+
+	// Container runtime usually needs these for chrome stability.
+	if c.inContainer() {
+		l = l.
+			Set("no-sandbox").
+			Set("disable-dev-shm-usage")
+	}
+
+	devURL, err := l.Launch()
+	if err != nil {
+		return fmt.Errorf("启动浏览器: %w", err)
+	}
+
+	b := rod.New().NoDefaultDevice().ControlURL(devURL).Context(ctx)
+	if err := b.Connect(); err != nil {
+		return fmt.Errorf("连接浏览器: %w", err)
+	}
+
+	c.browser = b
+	return nil
+}
+
+func (c *BTClient) inContainer() bool {
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+		return true
+	}
+	return false
 }
 
 func (c *BTClient) fullLogin(ctx context.Context) error {
