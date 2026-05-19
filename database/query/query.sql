@@ -1,3 +1,25 @@
+-- name: GetMovies :many
+SELECT id, title, air_date
+FROM media
+WHERE
+  type = 'movie'
+  AND status IN ('wanted', 'monitoring');
+
+-- name: GetSeries :many
+SELECT
+  m.id AS series_id,
+  m.type,
+  m.title,
+  s.id AS season_id,
+  s.season_number,
+  s.air_date
+FROM media m
+JOIN seasons s ON m.id = s.series_id
+WHERE
+  type IN ('tv', 'anime')
+  AND status IN ('wanted', 'monitoring')
+ORDER BY m.id, s.season_number;
+
 -- name: UpsertMedia :execrows
 INSERT INTO media (tmdb_id, type, title, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)

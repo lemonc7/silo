@@ -1,8 +1,20 @@
 package resource
 
-type Client interface {
-	Login() error
-	Search(query string) ([]Torrent, error)
+import (
+	"context"
+)
+
+type Resource interface {
+	EnsureSession(ctx context.Context) error
+	Resolve(ctx context.Context, media Media) (string, error)
+	FetchReleases(url string) ([]Torrent, error)
+}
+
+type Media struct {
+	Type   string
+	Title  string
+	Year   int
+	Season *int
 }
 
 type Torrent struct {

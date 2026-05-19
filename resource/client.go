@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ func NewBTClient(cfg config.ResourceConfig) *BTClient {
 	return &BTClient{cfg: cfg}
 }
 
-func (c *BTClient) Login() error {
+func (c *BTClient) EnsureSession(ctx context.Context) error {
 	l := launcher.New()
 	devUrl, err := l.Launch()
 	if err != nil {
@@ -34,25 +35,26 @@ func (c *BTClient) Login() error {
 		return fmt.Errorf("连接浏览器: %w", err)
 	}
 
-	cookies, err := c.loadCookies()
+	cookies, err := loadCookies()
 	if err != nil {
 		fmt.Printf("[bt] 加载 cookie 失败: %v\n", err)
+		return c.fullLogin(ctx)
 	}
 	if len(cookies) == 0 {
-		return c.fullLogin()
+		return c.fullLogin(ctx)
 	}
 
 	if err := c.setCookies(cookies); err != nil {
-		return c.fullLogin()
+		return c.fullLogin(ctx)
 	}
 
-	if err := c.verifySession(); err == nil {
+	if err := c.verifySession(ctx); err == nil {
 		fmt.Printf("[bt] 登录成功")
 		return nil
 	}
 
 	fmt.Println("[bt] cookie 可能失效，执行完整登录")
-	return c.fullLogin()
+	return c.fullLogin(ctx)
 }
 
 func (c *BTClient) Close() {
@@ -61,46 +63,13 @@ func (c *BTClient) Close() {
 	}
 }
 
-func (c *BTClient) loadCookies() ([]*proto.NetworkCookie, error) {
-	data, err := os.ReadFile(cookieFile)
-	if err != nil {
-		return nil, err
-	}
-	var cookies []*proto.NetworkCookie
-	if err := json.Unmarshal(data, &cookies); err != nil {
-		return nil, err
-	}
-	return cookies, nil
-}
-
-func (c *BTClient) saveCookies(cookies []*proto.NetworkCookie) {
-	data, err := json.MarshalIndent(cookies, "", "  ")
-	if err != nil {
-		fmt.Printf("[bt] 解码 cookie: %v\n", err)
-		return
-	}
-	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
-		fmt.Printf("[bt] 写入 cookie 文件: %v\n", err)
-	}
-}
-
-func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
-	params := proto.CookiesToParams(cookies)
-	if len(params) == 0 {
-		return fmt.Errorf("设置的 cookie 是空的")
-	}
-	if err := c.browser.SetCookies(params); err != nil {
-		return fmt.Errorf("设置 cookie: %w", err)
-	}
-	return nil
-}
-
-func (c *BTClient) fullLogin() error {
+func (c *BTClient) fullLogin(ctx context.Context) error {
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL + "/user/login"})
 	if err != nil {
 		return fmt.Errorf("打开登录页: %w", err)
 	}
 	defer page.Close()
+	page = page.Context(ctx)
 
 	usernameEl, err := page.Element(`input[name="username"]`)
 	if err != nil {
@@ -126,32 +95,56 @@ func (c *BTClient) fullLogin() error {
 		return fmt.Errorf("点击登录: %w", err)
 	}
 
-	for {
-		cookies, err := c.browser.GetCookies()
-		if err == nil && hasCookie(cookies, "app_auth") {
-			if err := c.setCookies(cookies); err != nil {
-				return err
-			}
-			c.saveCookies(cookies)
-			break
-		}
-		time.Sleep(200 * time.Millisecond)
+	cookies, err := c.waitAuthCookie(ctx)
+	if err != nil {
+		return err
 	}
+	if err := c.setCookies(cookies); err != nil {
+		return err
+	}
+	saveCookies(cookies)
 
 	fmt.Println("[bt] 登录成功，cookie 已缓存")
 	return nil
 }
 
-func (c *BTClient) verifySession() error {
+func (c *BTClient) waitAuthCookie(ctx context.Context) ([]*proto.NetworkCookie, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("等待 app_auth 取消: %w", ctx.Err())
+		default:
+		}
+
+		cookies, err := c.browser.GetCookies()
+		if err == nil && hasCookie(cookies, "app_auth") {
+			return cookies, nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
+	params := proto.CookiesToParams(cookies)
+	if len(params) == 0 {
+		return fmt.Errorf("设置的 cookie 是空的")
+	}
+	if err := c.browser.SetCookies(params); err != nil {
+		return fmt.Errorf("设置 cookie: %w", err)
+	}
+	return nil
+}
+
+func (c *BTClient) verifySession(ctx context.Context) error {
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
 	if err != nil {
 		return fmt.Errorf("打开主页验证: %w", err)
 	}
 	defer page.Close()
+	page = page.Context(ctx)
 
 	var state string
 	_, err = page.
-		Timeout(30 * time.Second).
 		Race().
 		Element("#user_load > div").
 		Handle(func(e *rod.Element) error {
@@ -181,6 +174,29 @@ func (c *BTClient) verifySession() error {
 	return nil
 }
 
+func loadCookies() ([]*proto.NetworkCookie, error) {
+	data, err := os.ReadFile(cookieFile)
+	if err != nil {
+		return nil, err
+	}
+	var cookies []*proto.NetworkCookie
+	if err := json.Unmarshal(data, &cookies); err != nil {
+		return nil, err
+	}
+	return cookies, nil
+}
+
+func saveCookies(cookies []*proto.NetworkCookie) {
+	data, err := json.MarshalIndent(cookies, "", "  ")
+	if err != nil {
+		fmt.Printf("[bt] 解码 cookie: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
+		fmt.Printf("[bt] 写入 cookie 文件: %v\n", err)
+	}
+}
+
 func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
 	for _, ck := range cookies {
 		if ck.Name == name {
@@ -188,12 +204,4 @@ func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
 		}
 	}
 	return false
-}
-
-func cookieNames(cookies []*proto.NetworkCookie) []string {
-	names := make([]string, 0, len(cookies))
-	for _, ck := range cookies {
-		names = append(names, ck.Name)
-	}
-	return names
 }
