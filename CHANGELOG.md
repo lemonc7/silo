@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1](https://github.com/lemonc7/silo/compare/v0.2.0...v0.2.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* 修复资源站登录bug，调整cookies和校验逻辑 ([d4420ca](https://github.com/lemonc7/silo/commit/d4420ca4a6f0d870e9372b684cda2842d0c7fb48))
+* 定义resource接口，重构Login方法为EnsureSession，增加context控制 ([f4fd496](https://github.com/lemonc7/silo/commit/f4fd4960ed1d77996c4051883e492a6ea0ceab60))
+* 定义Search接口，准备完善搜索磁力链接的功能 ([089d3d0](https://github.com/lemonc7/silo/commit/089d3d06bde4e7ae771b2b0e0fe9f9dee54d809f))
+* 调整browser参数设置，区分测试和生产环境 ([ca333a6](https://github.com/lemonc7/silo/commit/ca333a6355b57e9e6ed072be6e5022b7a6b22692))
+
 ## [0.2.0](https://github.com/lemonc7/silo/compare/v0.1.2...v0.2.0) (2026-05-18)
 
 
