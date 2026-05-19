@@ -46,71 +46,13 @@ func (c *BTClient) Login() error {
 		return c.fullLogin()
 	}
 
-	if c.isExpired(cookies, "app_auth") {
-		fmt.Println("[bt] app_auth 过期，重新登录")
-		return c.fullLogin()
-	}
-	if c.isExpired(cookies, "browser_verified") {
-		fmt.Println("[bt] browser_verified 过期，刷新 POW")
-		return c.refreshPOW()
+	if err := c.verifySession(); err == nil {
+		fmt.Printf("[bt] 登录成功")
+		return nil
 	}
 
-	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
-	if err != nil {
-		return fmt.Errorf("验证登录: %w", err)
-	}
-	defer page.Close()
-
-	if err := page.WaitLoad(); err != nil {
-		return fmt.Errorf("等待主页加载完成: %w", err)
-	}
-
-	info, err := page.Info()
-	if err != nil {
-		return fmt.Errorf("页面信息: %w", err)
-	}
-
-	if info.Title != "首页" {
-		fmt.Printf("[bt] 标题不对: %s, 也许 cookie 已经失效，重新登录", info.Title)
-		return c.fullLogin()
-	}
-
-	fmt.Printf("[bt] 登录成功")
-	return nil
-}
-
-func (c *BTClient) Search(query string) ([]Torrent, error) {
-	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
-	if err != nil {
-		return nil, fmt.Errorf("打开主页: %w", err)
-	}
-	defer page.Close()
-
-	popupButton, err := page.Element("div.popup-close")
-	if err != nil {
-		return nil, fmt.Errorf("弹窗按钮: %w", err)
-	}
-	if err := popupButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return nil, fmt.Errorf("关闭弹窗: %w", err)
-	}
-
-	search, err := page.Element("#q")
-	if err != nil {
-		return nil, fmt.Errorf("搜索框: %w", err)
-	}
-	if err := search.Input(query); err != nil {
-		return nil, fmt.Errorf("输入搜索词: %w", err)
-	}
-
-	button, err := page.Element("#s_form > button")
-	if err != nil {
-		return nil, fmt.Errorf("搜索按钮: %w", err)
-	}
-	if err := button.Click(proto.InputMouseButtonLeft, 1); err != nil {
-		return nil, fmt.Errorf("点击搜索: %w", err)
-	}
-
-	return nil, nil
+	fmt.Println("[bt] cookie 可能失效，执行完整登录")
+	return c.fullLogin()
 }
 
 func (c *BTClient) Close() {
@@ -142,24 +84,8 @@ func (c *BTClient) saveCookies(cookies []*proto.NetworkCookie) {
 	}
 }
 
-func (c *BTClient) isExpired(cookies []*proto.NetworkCookie, name string) bool {
-	for _, ck := range cookies {
-		if ck.Name == name && ck.Expires > 0 && int64(ck.Expires) < time.Now().Unix() {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
-	var params []*proto.NetworkCookieParam
-	for _, ck := range cookies {
-		params = append(params, &proto.NetworkCookieParam{
-			Name:   ck.Name,
-			Value:  ck.Value,
-			Domain: ck.Domain,
-		})
-	}
+	params := proto.CookiesToParams(cookies)
 	if len(params) == 0 {
 		return fmt.Errorf("设置的 cookie 是空的")
 	}
@@ -200,37 +126,74 @@ func (c *BTClient) fullLogin() error {
 		return fmt.Errorf("点击登录: %w", err)
 	}
 
-	cookies, err := page.Cookies(nil)
-	if err != nil {
-		return fmt.Errorf("获取 cookie: %w", err)
+	for {
+		cookies, err := c.browser.GetCookies()
+		if err == nil && hasCookie(cookies, "app_auth") {
+			if err := c.setCookies(cookies); err != nil {
+				return err
+			}
+			c.saveCookies(cookies)
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-
-	if err := c.setCookies(cookies); err != nil {
-		return err
-	}
-	c.saveCookies(cookies)
 
 	fmt.Println("[bt] 登录成功，cookie 已缓存")
 	return nil
 }
 
-func (c *BTClient) refreshPOW() error {
+func (c *BTClient) verifySession() error {
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
 	if err != nil {
-		return err
+		return fmt.Errorf("打开主页验证: %w", err)
 	}
 	defer page.Close()
 
-	cookies, err := page.Cookies(nil)
+	var state string
+	_, err = page.
+		Timeout(30 * time.Second).
+		Race().
+		Element("#user_load > div").
+		Handle(func(e *rod.Element) error {
+			fmt.Println("[bt] 校验登录状态: 已登录")
+			state = "logged_in"
+			return nil
+		}).
+		Element("#user_load > a").
+		Handle(func(e *rod.Element) error {
+			fmt.Println("[bt] 校验登录状态: 未登录")
+			state = "need_login"
+			return nil
+		}).
+		Do()
+
 	if err != nil {
-		return err
+		return fmt.Errorf("判定登录状态失败: %w", err)
 	}
 
-	if err := c.setCookies(cookies); err != nil {
-		return err
+	if state == "need_login" {
+		return fmt.Errorf("未登录")
+	}
+	if state != "logged_in" {
+		return fmt.Errorf("登录状态未知: %s", state)
 	}
 
-	c.saveCookies(cookies)
-	fmt.Println("[bt] POW 刷新完成")
 	return nil
+}
+
+func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
+	for _, ck := range cookies {
+		if ck.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func cookieNames(cookies []*proto.NetworkCookie) []string {
+	names := make([]string, 0, len(cookies))
+	for _, ck := range cookies {
+		names = append(names, ck.Name)
+	}
+	return names
 }
