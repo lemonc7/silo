@@ -9,13 +9,33 @@ import (
 )
 
 type Querier interface {
-	GetMovies(ctx context.Context) ([]GetMoviesRow, error)
+	// -- name: GetOutOfMovies :many
+	// SELECT id, title, air_date
+	// FROM media
+	// WHERE
+	//   type = 'movie'
+	//   AND status IN ('wanted', 'monitoring');
+	// -- name: GetSeries :many
+	// SELECT
+	//   m.id AS series_id,
+	//   m.type,
+	//   m.title,
+	//   s.id AS season_id,
+	//   s.season_number,
+	//   s.air_date
+	// FROM media m
+	// JOIN seasons s ON m.id = s.series_id
+	// WHERE
+	//   type IN ('tv', 'anime')
+	//   AND status IN ('wanted', 'monitoring')
+	// ORDER BY m.id, s.season_number;
+	GetOutOfMedias(ctx context.Context) ([]GetOutOfMediasRow, error)
 	GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeasonsRow, error)
 	GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, error)
-	GetSeries(ctx context.Context) ([]GetSeriesRow, error)
 	UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (int64, error)
 	UpsertMedia(ctx context.Context, arg UpsertMediaParams) (int64, error)
 	UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int64, error)
+	UpsertSourceLinks(ctx context.Context, arg UpsertSourceLinksParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

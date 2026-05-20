@@ -1,4 +1,4 @@
-package resource
+package release
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/lemonc7/silo/catalog"
 	"github.com/lemonc7/silo/config"
-	"github.com/lemonc7/silo/media"
 )
 
 const cookieFile = "bt_cookies.json"
@@ -23,7 +23,7 @@ type BTClient struct {
 	debug   bool
 }
 
-var _ Resource = (*BTClient)(nil)
+var _ Provider = (*BTClient)(nil)
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
 	return &BTClient{cfg: cfg}
@@ -67,11 +67,11 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 func (c *BTClient) Resolve(ctx context.Context, item Media) (string, error) {
 	var queryType int
 	switch item.Type {
-	case media.MediaTypeMovie:
+	case catalog.MediaTypeMovie:
 		queryType = 1
-	case media.MediaTypeTV:
+	case catalog.MediaTypeTV:
 		queryType = 2
-	case media.MediaTypeAnime:
+	case catalog.MediaTypeAnime:
 		queryType = 3
 	}
 

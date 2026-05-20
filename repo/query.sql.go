@@ -10,30 +10,63 @@ import (
 	"time"
 )
 
-const getMovies = `-- name: GetMovies :many
-SELECT id, title, air_date
+const getOutOfMedias = `-- name: GetOutOfMedias :many
+
+
+
+SELECT id, type, title, air_date
 FROM media
-WHERE
-  type = 'movie'
-  AND status IN ('wanted', 'monitoring')
+WHERE status IN ('wanted', 'monitoring')
 `
 
-type GetMoviesRow struct {
+type GetOutOfMediasRow struct {
 	ID      int64     `json:"id"`
+	Type    string    `json:"type"`
 	Title   string    `json:"title"`
 	AirDate time.Time `json:"air_date"`
 }
 
-func (q *Queries) GetMovies(ctx context.Context) ([]GetMoviesRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMovies)
+// -- name: GetOutOfMovies :many
+// SELECT id, title, air_date
+// FROM media
+// WHERE
+//
+//	type = 'movie'
+//	AND status IN ('wanted', 'monitoring');
+//
+// -- name: GetSeries :many
+// SELECT
+//
+//	m.id AS series_id,
+//	m.type,
+//	m.title,
+//	s.id AS season_id,
+//	s.season_number,
+//	s.air_date
+//
+// FROM media m
+// JOIN seasons s ON m.id = s.series_id
+// WHERE
+//
+//	type IN ('tv', 'anime')
+//	AND status IN ('wanted', 'monitoring')
+//
+// ORDER BY m.id, s.season_number;
+func (q *Queries) GetOutOfMedias(ctx context.Context) ([]GetOutOfMediasRow, error) {
+	rows, err := q.db.QueryContext(ctx, getOutOfMedias)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetMoviesRow
+	var items []GetOutOfMediasRow
 	for rows.Next() {
-		var i GetMoviesRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.AirDate); err != nil {
+		var i GetOutOfMediasRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Title,
+			&i.AirDate,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -124,61 +157,6 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 	return items, nil
 }
 
-const getSeries = `-- name: GetSeries :many
-SELECT
-  m.id AS series_id,
-  m.type,
-  m.title,
-  s.id AS season_id,
-  s.season_number,
-  s.air_date
-FROM media m
-JOIN seasons s ON m.id = s.series_id
-WHERE
-  type IN ('tv', 'anime')
-  AND status IN ('wanted', 'monitoring')
-ORDER BY m.id, s.season_number
-`
-
-type GetSeriesRow struct {
-	SeriesID     int64     `json:"series_id"`
-	Type         string    `json:"type"`
-	Title        string    `json:"title"`
-	SeasonID     int64     `json:"season_id"`
-	SeasonNumber int64     `json:"season_number"`
-	AirDate      time.Time `json:"air_date"`
-}
-
-func (q *Queries) GetSeries(ctx context.Context) ([]GetSeriesRow, error) {
-	rows, err := q.db.QueryContext(ctx, getSeries)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetSeriesRow
-	for rows.Next() {
-		var i GetSeriesRow
-		if err := rows.Scan(
-			&i.SeriesID,
-			&i.Type,
-			&i.Title,
-			&i.SeasonID,
-			&i.SeasonNumber,
-			&i.AirDate,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const upsertEpisode = `-- name: UpsertEpisode :execrows
 INSERT INTO episodes (season_id, episode_number, air_date)
 VALUES (?1, ?2, ?3)
@@ -255,6 +233,32 @@ func (q *Queries) UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int
 		arg.EpisodeCount,
 		arg.AirDate,
 		arg.PosterPath,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertSourceLinks = `-- name: UpsertSourceLinks :execrows
+INSERT INTO sourcelinks (provider, media_id, season_id, detail_path)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT(provider, detail_path) DO NOTHING
+`
+
+type UpsertSourceLinksParams struct {
+	Provider   string `json:"provider"`
+	MediaID    int64  `json:"media_id"`
+	SeasonID   *int64 `json:"season_id"`
+	DetailPath string `json:"detail_path"`
+}
+
+func (q *Queries) UpsertSourceLinks(ctx context.Context, arg UpsertSourceLinksParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertSourceLinks,
+		arg.Provider,
+		arg.MediaID,
+		arg.SeasonID,
+		arg.DetailPath,
 	)
 	if err != nil {
 		return 0, err

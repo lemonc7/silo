@@ -1,4 +1,4 @@
-package media
+package catalog
 
 import (
 	"context"
@@ -15,13 +15,6 @@ import (
 	"github.com/lemonc7/silo/config"
 )
 
-// Client TMDB 数据源接口。
-type Client interface {
-	FetchMedia(ctx context.Context) ([]MediaItem, error)
-	FetchSeasons(ctx context.Context, tmdbID int64) ([]Season, error)
-	FetchEpisodes(ctx context.Context, tmdbID, seasonNum int64) ([]Episode, error)
-}
-
 // HTTPClient 基于 TMDB v3 API + Bearer Token 认证。
 type HTTPClient struct {
 	bearerToken string
@@ -32,7 +25,7 @@ type HTTPClient struct {
 	client      *http.Client
 }
 
-var _ Client = (*HTTPClient)(nil)
+var _ Provider = (*HTTPClient)(nil)
 
 func NewHTTPClient(cfg config.TMDBConfig) *HTTPClient {
 	c := &HTTPClient{

@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 
+	"github.com/lemonc7/silo/app"
+	"github.com/lemonc7/silo/catalog"
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
-	"github.com/lemonc7/silo/media"
 	"github.com/lemonc7/silo/repo"
-	"github.com/lemonc7/silo/service"
 )
 
 func main() {
@@ -22,9 +22,10 @@ func main() {
 	}
 	defer db.Close()
 
-	srv := service.NewMediaService(
+	srv := app.NewMediaService(
 		repo.New(db),
-		media.NewHTTPClient(cfg.TMDB),
+		catalog.NewHTTPClient(cfg.TMDB),
+		nil,
 	)
 
 	ctx := context.Background()

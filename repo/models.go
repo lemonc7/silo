@@ -46,3 +46,11 @@ type Season struct {
 	AirDate      time.Time `json:"air_date"`
 	PosterPath   string    `json:"poster_path"`
 }
+
+type Sourcelink struct {
+	ID         int64  `json:"id"`
+	Provider   string `json:"provider"`
+	MediaID    int64  `json:"media_id"`
+	SeasonID   *int64 `json:"season_id"`
+	DetailPath string `json:"detail_path"`
+}

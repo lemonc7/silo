@@ -41,3 +41,12 @@ CREATE TABLE IF NOT EXISTS resources (
     status TEXT NOT NULL DEFAULT 'available'
       CHECK(status IN ('available', 'downloading', 'downloaded', 'failed'))
 );
+
+CREATE TABLE IF NOT EXISTS sourcelinks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider TEXT NOT NULL,
+    media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
+    detail_path TEXT NOT NULL,
+    UNIQUE(provider, detail_path)
+);

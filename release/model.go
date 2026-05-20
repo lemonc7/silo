@@ -1,19 +1,19 @@
-package resource
+package release
 
 import (
 	"context"
 
-	"github.com/lemonc7/silo/media"
+	"github.com/lemonc7/silo/catalog"
 )
 
-type Resource interface {
+type Provider interface {
 	EnsureSession(ctx context.Context) error
 	Resolve(ctx context.Context, item Media) (string, error)
 	FetchReleases(url string) ([]Torrent, error)
 }
 
 type Media struct {
-	Type  media.MediaType
+	Type  catalog.MediaType
 	Title string
 	Year  int
 }
