@@ -2,19 +2,20 @@ package resource
 
 import (
 	"context"
+
+	"github.com/lemonc7/silo/media"
 )
 
 type Resource interface {
 	EnsureSession(ctx context.Context) error
-	Resolve(ctx context.Context, media Media) (string, error)
+	Resolve(ctx context.Context, item Media) (string, error)
 	FetchReleases(url string) ([]Torrent, error)
 }
 
 type Media struct {
-	Type   string
-	Title  string
-	Year   int
-	Season *int
+	Type  media.MediaType
+	Title string
+	Year  int
 }
 
 type Torrent struct {

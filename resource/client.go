@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/lemonc7/silo/config"
+	"github.com/lemonc7/silo/media"
 )
 
 const cookieFile = "bt_cookies.json"
@@ -20,6 +22,8 @@ type BTClient struct {
 	browser *rod.Browser
 	debug   bool
 }
+
+var _ Resource = (*BTClient)(nil)
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
 	return &BTClient{cfg: cfg}
@@ -44,12 +48,61 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 	}
 
 	if err := c.verifySession(ctx); err == nil {
-		fmt.Printf("[bt] 登录成功")
+		latestCookies, getErr := c.browser.GetCookies()
+		if getErr != nil {
+			fmt.Printf("[bt] 登录成功，但刷新 cookie 失败: %v\n", getErr)
+			return nil
+		}
+		if len(latestCookies) > 0 {
+			saveCookies(latestCookies)
+		}
+		fmt.Println("[bt] 登录成功，cookie 已更新")
 		return nil
 	}
 
 	fmt.Println("[bt] cookie 可能失效，执行完整登录")
 	return c.fullLogin(ctx)
+}
+
+func (c *BTClient) Resolve(ctx context.Context, item Media) (string, error) {
+	var queryType int
+	switch item.Type {
+	case media.MediaTypeMovie:
+		queryType = 1
+	case media.MediaTypeTV:
+		queryType = 2
+	case media.MediaTypeAnime:
+		queryType = 3
+	}
+
+	searchURL := fmt.Sprintf("%s/search?q=%s+%d&type=%d&mode=1",
+		c.cfg.URL, url.QueryEscape(item.Title), item.Year, queryType)
+
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: searchURL})
+	if err != nil {
+		return "", fmt.Errorf("打开页面: %w", err)
+	}
+	defer page.Close()
+	page = page.Context(ctx)
+
+	el, err := page.Element("div.sr_lists > div > div.img > a")
+	if err != nil {
+		return "", fmt.Errorf("获取目标元素: %w", err)
+	}
+
+	href, err := el.Attribute("href")
+	if err != nil {
+		return "", fmt.Errorf("读取href: %w", err)
+	}
+	if href == nil || *href == "" {
+		return "", fmt.Errorf("href为空")
+	}
+
+	return *href, nil
+}
+
+func (c *BTClient) FetchReleases(url string) ([]Torrent, error) {
+	panic("not implemented") // TODO: Implement
 }
 
 func (c *BTClient) Close() {
@@ -74,7 +127,6 @@ func (c *BTClient) launch(ctx context.Context) error {
 		l = l.Headless(true)
 	}
 
-	// Container runtime usually needs these for chrome stability.
 	if c.inContainer() {
 		l = l.
 			Set("no-sandbox").
@@ -154,7 +206,7 @@ func (c *BTClient) waitAuthCookie(ctx context.Context) ([]*proto.NetworkCookie, 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("等待 app_auth 取消: %w", ctx.Err())
+			return nil, fmt.Errorf("等待 app_auth 超时: %w", ctx.Err())
 		default:
 		}
 
@@ -169,7 +221,7 @@ func (c *BTClient) waitAuthCookie(ctx context.Context) ([]*proto.NetworkCookie, 
 func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
 	params := proto.CookiesToParams(cookies)
 	if len(params) == 0 {
-		return fmt.Errorf("设置的 cookie 是空的")
+		return fmt.Errorf("设置的 cookie 为空")
 	}
 	if err := c.browser.SetCookies(params); err != nil {
 		return fmt.Errorf("设置 cookie: %w", err)
@@ -180,7 +232,7 @@ func (c *BTClient) setCookies(cookies []*proto.NetworkCookie) error {
 func (c *BTClient) verifySession(ctx context.Context) error {
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL})
 	if err != nil {
-		return fmt.Errorf("打开主页验证: %w", err)
+		return fmt.Errorf("打开首页验证: %w", err)
 	}
 	defer page.Close()
 	page = page.Context(ctx)
@@ -231,7 +283,7 @@ func loadCookies() ([]*proto.NetworkCookie, error) {
 func saveCookies(cookies []*proto.NetworkCookie) {
 	data, err := json.MarshalIndent(cookies, "", "  ")
 	if err != nil {
-		fmt.Printf("[bt] 解码 cookie: %v\n", err)
+		fmt.Printf("[bt] 编码 cookie: %v\n", err)
 		return
 	}
 	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {

@@ -15,11 +15,11 @@ const (
 )
 
 type MediaItem struct {
-	TmdbID     int64      `json:"tmdb_id"`
-	Title      string     `json:"title"`
-	Type       MediaType  `json:"type"`
-	AirDate    *time.Time `json:"air_date"`
-	PosterPath string     `json:"poster_path"`
+	TmdbID     int64     `json:"tmdb_id"`
+	Title      string    `json:"title"`
+	Type       MediaType `json:"type"`
+	AirDate    time.Time `json:"air_date"`
+	PosterPath string    `json:"poster_path"`
 }
 
 func (m *MediaItem) UnmarshalJSON(data []byte) error {
@@ -56,10 +56,10 @@ func (m *MediaItem) UnmarshalJSON(data []byte) error {
 }
 
 type Season struct {
-	SeasonNumber int64      `json:"season_number"`
-	EpisodeCount int64      `json:"episode_count"`
-	AirDate      *time.Time `json:"air_date"`
-	PosterPath   string     `json:"poster_path"`
+	SeasonNumber int64     `json:"season_number"`
+	EpisodeCount int64     `json:"episode_count"`
+	AirDate      time.Time `json:"air_date"`
+	PosterPath   string    `json:"poster_path"`
 }
 
 func (s *Season) UnmarshalJSON(data []byte) error {
@@ -75,8 +75,8 @@ func (s *Season) UnmarshalJSON(data []byte) error {
 }
 
 type Episode struct {
-	EpisodeNumber int64      `json:"episode_number"`
-	AirDate       *time.Time `json:"air_date"`
+	EpisodeNumber int64     `json:"episode_number"`
+	AirDate       time.Time `json:"air_date"`
 }
 
 func (s *Episode) UnmarshalJSON(data []byte) error {
@@ -128,10 +128,7 @@ type episodeRaw struct {
 	AirDate       string `json:"air_date"`
 }
 
-func parseDate(date string) *time.Time {
-	t, err := time.Parse(time.DateOnly, date)
-	if err != nil {
-		return nil
-	}
-	return &t
+func parseDate(date string) time.Time {
+	t, _ := time.Parse(time.DateOnly, date)
+	return t
 }
