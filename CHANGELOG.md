@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/lemonc7/silo/compare/v0.2.1...v0.3.0) (2026-05-21)
+
+
+### Features
+
+* 实现获取详情页链接的逻辑 ([697e596](https://github.com/lemonc7/silo/commit/697e596a958d474db78e59cf4c5ed0d0c4538a0a))
+
+
+### Bug Fixes
+
+* 修复资源详情页代码逻辑，增加空资源处理逻辑 ([14113f7](https://github.com/lemonc7/silo/commit/14113f713d15451c1bd7e8775acc4f75c21c3773))
+* 增加详情页链接爬取逻辑 ([21059a1](https://github.com/lemonc7/silo/commit/21059a11fe4c403e9b5443253cc3ed3de84b9d64))
+* 调整包名，调整详情页链接获取逻辑 ([2a6719b](https://github.com/lemonc7/silo/commit/2a6719bf76757802b05a98be573839b9d73796d3))
+
 ## [0.2.1](https://github.com/lemonc7/silo/compare/v0.2.0...v0.2.1) (2026-05-19)
 
 
