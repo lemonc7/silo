@@ -10,10 +10,52 @@ import (
 	"time"
 )
 
+const getMovieLinks = `-- name: GetMovieLinks :many
+SELECT 
+  m.id,
+  s.detail_path
+FROM medias m
+JOIN sourcelinks s
+WHERE
+  m.type = 'movie'
+  AND m.status IN ('wanted', 'monitoring')
+  AND s.provider = ?1
+  AND s.media_id = m.id
+  AND s.season_id IS NULL
+`
+
+type GetMovieLinksRow struct {
+	ID         int64  `json:"id"`
+	DetailPath string `json:"detail_path"`
+}
+
+func (q *Queries) GetMovieLinks(ctx context.Context, provider string) ([]GetMovieLinksRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMovieLinks, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMovieLinksRow
+	for rows.Next() {
+		var i GetMovieLinksRow
+		if err := rows.Scan(&i.ID, &i.DetailPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getOutOfSyncSeasons = `-- name: GetOutOfSyncSeasons :many
 SELECT m.tmdb_id, s.id, s.season_number
 FROM seasons s
-JOIN media m ON m.id = s.series_id
+JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND m.status IN ('wanted', 'monitoring')
   AND s.episode_count > (
@@ -52,7 +94,7 @@ func (q *Queries) GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeason
 
 const getOutOfSyncTVs = `-- name: GetOutOfSyncTVs :many
 SELECT id, tmdb_id
-FROM media
+FROM medias
 WHERE type IN ('tv', 'anime')
   AND status IN ('wanted', 'monitoring')
 `
@@ -87,7 +129,7 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 
 const getUnsyncedMovies = `-- name: GetUnsyncedMovies :many
 SELECT m.id, m.title, m.air_date
-FROM media m
+FROM medias m
 WHERE m.type = 'movie'
   AND NOT EXISTS (
     SELECT 1
@@ -128,14 +170,15 @@ func (q *Queries) GetUnsyncedMovies(ctx context.Context, provider string) ([]Get
 }
 
 const getUnsyncedSeasons = `-- name: GetUnsyncedSeasons :many
-SELECT s.id AS season_id,
-       s.series_id,
-       m.type,
-       m.title,
-       s.air_date,
-       s.season_number
+SELECT 
+  s.id AS season_id,
+  s.series_id,
+  m.type,
+  m.title,
+  s.air_date,
+  s.season_number
 FROM seasons s
-JOIN media m ON m.id = s.series_id
+JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND NOT EXISTS (
     SELECT 1
@@ -207,7 +250,7 @@ func (q *Queries) UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (i
 }
 
 const upsertMedia = `-- name: UpsertMedia :execrows
-INSERT INTO media (tmdb_id, type, title, air_date, poster_path)
+INSERT INTO medias (tmdb_id, type, title, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT(tmdb_id) DO UPDATE SET
   title = excluded.title,

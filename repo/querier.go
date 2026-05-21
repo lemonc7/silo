@@ -9,6 +9,7 @@ import (
 )
 
 type Querier interface {
+	GetMovieLinks(ctx context.Context, provider string) ([]GetMovieLinksRow, error)
 	GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeasonsRow, error)
 	GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, error)
 	GetUnsyncedMovies(ctx context.Context, provider string) ([]GetUnsyncedMoviesRow, error)

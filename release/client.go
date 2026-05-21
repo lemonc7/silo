@@ -3,6 +3,7 @@ package release
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -16,6 +17,10 @@ import (
 )
 
 const cookieFile = "bt_cookies.json"
+
+var (
+	ErrNoMatch = errors.New("资源不存在")
+)
 
 type BTClient struct {
 	cfg     config.ResourceConfig
@@ -75,34 +80,54 @@ func (c *BTClient) Resolve(ctx context.Context, item Media) (string, error) {
 		queryType = 3
 	}
 
-	searchURL := fmt.Sprintf("%s/search?q=%s+%d&type=%d&mode=1",
+	url := fmt.Sprintf("%s/search?q=%s+%d&type=%d&mode=1",
 		c.cfg.URL, url.QueryEscape(item.Title), item.Year, queryType)
 
-	page, err := c.browser.Page(proto.TargetCreateTarget{URL: searchURL})
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: url})
 	if err != nil {
 		return "", fmt.Errorf("打开页面: %w", err)
 	}
 	defer page.Close()
 	page = page.Context(ctx)
 
-	el, err := page.Element("div.sr_lists > div > div.img > a")
+	var result string
+
+	_, err = page.Race().
+		Element("div.sr_lists:empty").
+		Handle(func(e *rod.Element) error {
+			return fmt.Errorf("%w: %s-%d", ErrNoMatch, item.Title, item.Year)
+		}).
+		Element("div.sr_lists > div > div.img > a").
+		Handle(func(e *rod.Element) error {
+			href, err := e.Attribute("href")
+			if err != nil {
+				return fmt.Errorf("读取href: %w", err)
+			}
+			if href == nil || *href == "" {
+				return fmt.Errorf("href为空")
+			}
+
+			result = *href
+			return nil
+		}).
+		Do()
+
 	if err != nil {
-		return "", fmt.Errorf("获取目标元素: %w", err)
+		return "", fmt.Errorf("搜索结果失败: %w", err)
 	}
 
-	href, err := el.Attribute("href")
-	if err != nil {
-		return "", fmt.Errorf("读取href: %w", err)
-	}
-	if href == nil || *href == "" {
-		return "", fmt.Errorf("href为空")
-	}
-
-	return *href, nil
+	return result, nil
 }
 
-func (c *BTClient) FetchReleases(url string) ([]Torrent, error) {
-	panic("not implemented") // TODO: Implement
+func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent, error) {
+	url := c.cfg.URL + item.Target
+	page, err := c.browser.Page(proto.TargetCreateTarget{URL: url})
+	if err != nil {
+		return nil, fmt.Errorf("打开资源详情页: %w", err)
+	}
+	_ = page
+
+	return nil, nil
 }
 
 func (c *BTClient) Close() {

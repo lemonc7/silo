@@ -1,13 +1,13 @@
 -- name: GetOutOfSyncTVs :many
 SELECT id, tmdb_id
-FROM media
+FROM medias
 WHERE type IN ('tv', 'anime')
   AND status IN ('wanted', 'monitoring');
 
 -- name: GetOutOfSyncSeasons :many
 SELECT m.tmdb_id, s.id, s.season_number
 FROM seasons s
-JOIN media m ON m.id = s.series_id
+JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND m.status IN ('wanted', 'monitoring')
   AND s.episode_count > (
@@ -15,7 +15,7 @@ WHERE m.type IN ('tv', 'anime')
   );
 
 -- name: UpsertMedia :execrows
-INSERT INTO media (tmdb_id, type, title, air_date, poster_path)
+INSERT INTO medias (tmdb_id, type, title, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT(tmdb_id) DO UPDATE SET
   title = excluded.title,
@@ -38,7 +38,7 @@ ON CONFLICT(season_id, episode_number) DO UPDATE SET
 
 -- name: GetUnsyncedMovies :many
 SELECT m.id, m.title, m.air_date
-FROM media m
+FROM medias m
 WHERE m.type = 'movie'
   AND NOT EXISTS (
     SELECT 1
@@ -49,14 +49,15 @@ WHERE m.type = 'movie'
   );
 
 -- name: GetUnsyncedSeasons :many
-SELECT s.id AS season_id,
-       s.series_id,
-       m.type,
-       m.title,
-       s.air_date,
-       s.season_number
+SELECT 
+  s.id AS season_id,
+  s.series_id,
+  m.type,
+  m.title,
+  s.air_date,
+  s.season_number
 FROM seasons s
-JOIN media m ON m.id = s.series_id
+JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND NOT EXISTS (
     SELECT 1
@@ -70,3 +71,17 @@ WHERE m.type IN ('tv', 'anime')
 INSERT INTO sourcelinks (provider, media_id, season_id, detail_path)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(provider, detail_path) DO NOTHING;
+
+
+-- name: GetMovieLinks :many
+SELECT 
+  m.id,
+  s.detail_path
+FROM medias m
+JOIN sourcelinks s
+WHERE
+  m.type = 'movie'
+  AND m.status IN ('wanted', 'monitoring')
+  AND s.provider = ?1
+  AND s.media_id = m.id
+  AND s.season_id IS NULL;

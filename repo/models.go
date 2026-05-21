@@ -16,7 +16,7 @@ type Episode struct {
 	Status        string    `json:"status"`
 }
 
-type Medium struct {
+type Media struct {
 	ID         int64     `json:"id"`
 	TmdbID     int64     `json:"tmdb_id"`
 	Type       string    `json:"type"`
