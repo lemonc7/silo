@@ -48,10 +48,10 @@ func main() {
 	if err := srv.SyncEpisode(ctx); err != nil {
 		panic(err)
 	}
-	if err := srv.SyncMovieResourceLink(ctx); err != nil {
+	if err := srv.SyncMoviePage(ctx); err != nil {
 		panic(err)
 	}
-	if err := srv.SyncSeriesResourceLink(ctx); err != nil {
+	if err := srv.SyncSeriesPage(ctx); err != nil {
 		panic(err)
 	}
 }

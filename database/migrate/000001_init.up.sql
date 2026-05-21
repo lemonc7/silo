@@ -29,25 +29,24 @@ CREATE TABLE IF NOT EXISTS episodes (
     UNIQUE(season_id, episode_number)
 );
 
-CREATE TABLE IF NOT EXISTS resources (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
-    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
-    episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
-    magnet_url TEXT NOT NULL UNIQUE,
-    seeders INTEGER NOT NULL DEFAULT 0,
-    is_chinese INTEGER NOT NULL DEFAULT 0,
-    resolution TEXT,
-    status TEXT NOT NULL DEFAULT 'available'
-      CHECK(status IN ('available', 'downloading', 'downloaded', 'failed')),
-    UNIQUE(media_id, season_id, episode_id, magnet_url)
-);
-
-CREATE TABLE IF NOT EXISTS sourcelinks (
+CREATE TABLE IF NOT EXISTS pages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     provider TEXT NOT NULL,
     media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
     season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
     detail_path TEXT NOT NULL,
     UNIQUE(provider, detail_path)
+);
+
+CREATE TABLE IF NOT EXISTS magnets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
+    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
+    episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
+    magnet_url TEXT NOT NULL UNIQUE,
+    seeders INTEGER NOT NULL DEFAULT 0,
+    resolution TEXT,
+    status TEXT NOT NULL DEFAULT 'available'
+      CHECK(status IN ('available', 'downloading', 'downloaded', 'failed')),
+    UNIQUE(media_id, season_id, episode_id, magnet_url)
 );

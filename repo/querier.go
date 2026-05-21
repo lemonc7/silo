@@ -9,15 +9,15 @@ import (
 )
 
 type Querier interface {
-	GetMovieLinks(ctx context.Context, provider string) ([]GetMovieLinksRow, error)
+	GetMoviePages(ctx context.Context, provider string) ([]GetMoviePagesRow, error)
+	GetMoviesWithoutPage(ctx context.Context, provider string) ([]GetMoviesWithoutPageRow, error)
 	GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeasonsRow, error)
 	GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, error)
-	GetUnsyncedMovies(ctx context.Context, provider string) ([]GetUnsyncedMoviesRow, error)
-	GetUnsyncedSeasons(ctx context.Context, provider string) ([]GetUnsyncedSeasonsRow, error)
+	GetSeasonsWithoutPage(ctx context.Context, provider string) ([]GetSeasonsWithoutPageRow, error)
 	UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (int64, error)
 	UpsertMedia(ctx context.Context, arg UpsertMediaParams) (int64, error)
+	UpsertPages(ctx context.Context, arg UpsertPagesParams) (int64, error)
 	UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int64, error)
-	UpsertSourcelink(ctx context.Context, arg UpsertSourcelinkParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -26,12 +29,19 @@ type BTClient struct {
 	cfg     config.ResourceConfig
 	browser *rod.Browser
 	debug   bool
+	re      *regexp.Regexp
 }
 
 var _ Provider = (*BTClient)(nil)
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
-	return &BTClient{cfg: cfg}
+	resPattern := strings.Join(cfg.Resolutions, "|")
+	pattern := fmt.Sprintf(`^中字(%s)$`, resPattern)
+	return &BTClient{
+		cfg:   cfg,
+		debug: false,
+		re:    regexp.MustCompile(pattern),
+	}
 }
 
 func (c *BTClient) EnsureSession(ctx context.Context) error {
@@ -41,7 +51,7 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 
 	cookies, err := loadCookies()
 	if err != nil {
-		fmt.Printf("[bt] 加载 cookie 失败: %v\n", err)
+		log.Printf("[bt] 加载 cookie 失败: %v\n", err)
 		return c.fullLogin(ctx)
 	}
 	if len(cookies) == 0 {
@@ -55,17 +65,17 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 	if err := c.verifySession(ctx); err == nil {
 		latestCookies, getErr := c.browser.GetCookies()
 		if getErr != nil {
-			fmt.Printf("[bt] 登录成功，但刷新 cookie 失败: %v\n", getErr)
+			log.Printf("[bt] 登录成功，但刷新 cookie 失败: %v\n", getErr)
 			return nil
 		}
 		if len(latestCookies) > 0 {
 			saveCookies(latestCookies)
 		}
-		fmt.Println("[bt] 登录成功，cookie 已更新")
+		log.Println("[bt] 登录成功，cookie 已更新")
 		return nil
 	}
 
-	fmt.Println("[bt] cookie 可能失效，执行完整登录")
+	log.Println("[bt] cookie 可能失效，执行完整登录")
 	return c.fullLogin(ctx)
 }
 
@@ -125,9 +135,50 @@ func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent,
 	if err != nil {
 		return nil, fmt.Errorf("打开资源详情页: %w", err)
 	}
-	_ = page
+	defer page.Close()
+	page = page.Context(ctx)
 
-	return nil, nil
+	var torrents []Torrent
+
+	tabs, err := page.Elements("ul.nav-tabs > li")
+	if err != nil {
+		return nil, fmt.Errorf("资源标签页: %w", err)
+	}
+	// 无磁力链接提前返回
+	if len(tabs) == 1 {
+		return nil, fmt.Errorf("资源无磁力链接或期望的磁力链接")
+	}
+
+	for _, tab := range tabs {
+		text, err := tab.Text()
+		if err != nil {
+			return nil, fmt.Errorf("标签页名称: %w", err)
+		}
+		matches := c.re.FindStringSubmatch(text)
+		if len(matches) != 2 {
+			continue
+		}
+
+		if err := tab.Click(proto.InputMouseButtonLeft, 1); err != nil {
+			return nil, fmt.Errorf("点击标签页: %w", err)
+		}
+		rows, err := page.Elements("table.bit_list > tbody > tr")
+		if err != nil {
+			return nil, fmt.Errorf("读取资源列表失败: %w", err)
+		}
+
+		ts, err := getTorrents(rows)
+		if err != nil {
+			return nil, fmt.Errorf("获取磁力链接: %w", err)
+		}
+		torrents = append(torrents, ts...)
+	}
+
+	if len(torrents) == 0 {
+		return nil, fmt.Errorf("无预期的磁力链接")
+	}
+
+	return torrents, nil
 }
 
 func (c *BTClient) Close() {
@@ -223,7 +274,7 @@ func (c *BTClient) fullLogin(ctx context.Context) error {
 	}
 	saveCookies(cookies)
 
-	fmt.Println("[bt] 登录成功，cookie 已缓存")
+	log.Println("[bt] 登录成功，cookie 已缓存")
 	return nil
 }
 
@@ -267,13 +318,13 @@ func (c *BTClient) verifySession(ctx context.Context) error {
 		Race().
 		Element("#user_load > div").
 		Handle(func(e *rod.Element) error {
-			fmt.Println("[bt] 校验登录状态: 已登录")
+			log.Println("[bt] 校验登录状态: 已登录")
 			state = "logged_in"
 			return nil
 		}).
 		Element("#user_load > a").
 		Handle(func(e *rod.Element) error {
-			fmt.Println("[bt] 校验登录状态: 未登录")
+			log.Println("[bt] 校验登录状态: 未登录")
 			state = "need_login"
 			return nil
 		}).
@@ -308,11 +359,11 @@ func loadCookies() ([]*proto.NetworkCookie, error) {
 func saveCookies(cookies []*proto.NetworkCookie) {
 	data, err := json.MarshalIndent(cookies, "", "  ")
 	if err != nil {
-		fmt.Printf("[bt] 编码 cookie: %v\n", err)
+		log.Printf("[bt] 编码 cookie: %v\n", err)
 		return
 	}
 	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
-		fmt.Printf("[bt] 写入 cookie 文件: %v\n", err)
+		log.Printf("[bt] 写入 cookie 文件: %v\n", err)
 	}
 }
 
@@ -323,4 +374,8 @@ func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
 		}
 	}
 	return false
+}
+
+func getTorrents(elems rod.Elements) ([]Torrent, error) {
+	return nil, nil
 }

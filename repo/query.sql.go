@@ -10,35 +10,77 @@ import (
 	"time"
 )
 
-const getMovieLinks = `-- name: GetMovieLinks :many
+const getMoviePages = `-- name: GetMoviePages :many
 SELECT 
   m.id,
-  s.detail_path
+  p.detail_path
 FROM medias m
-JOIN sourcelinks s
+JOIN pages p
 WHERE
   m.type = 'movie'
   AND m.status IN ('wanted', 'monitoring')
-  AND s.provider = ?1
-  AND s.media_id = m.id
-  AND s.season_id IS NULL
+  AND p.provider = ?1
+  AND p.media_id = m.id
+  AND p.season_id IS NULL
 `
 
-type GetMovieLinksRow struct {
+type GetMoviePagesRow struct {
 	ID         int64  `json:"id"`
 	DetailPath string `json:"detail_path"`
 }
 
-func (q *Queries) GetMovieLinks(ctx context.Context, provider string) ([]GetMovieLinksRow, error) {
-	rows, err := q.db.QueryContext(ctx, getMovieLinks, provider)
+func (q *Queries) GetMoviePages(ctx context.Context, provider string) ([]GetMoviePagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMoviePages, provider)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetMovieLinksRow
+	var items []GetMoviePagesRow
 	for rows.Next() {
-		var i GetMovieLinksRow
+		var i GetMoviePagesRow
 		if err := rows.Scan(&i.ID, &i.DetailPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMoviesWithoutPage = `-- name: GetMoviesWithoutPage :many
+SELECT m.id, m.title, m.air_date
+FROM medias m
+WHERE m.type = 'movie'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pages p
+    WHERE p.provider = ?1
+      AND p.media_id = m.id
+      AND p.season_id IS NULL
+  )
+`
+
+type GetMoviesWithoutPageRow struct {
+	ID      int64     `json:"id"`
+	Title   string    `json:"title"`
+	AirDate time.Time `json:"air_date"`
+}
+
+func (q *Queries) GetMoviesWithoutPage(ctx context.Context, provider string) ([]GetMoviesWithoutPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, getMoviesWithoutPage, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMoviesWithoutPageRow
+	for rows.Next() {
+		var i GetMoviesWithoutPageRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.AirDate); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -127,49 +169,7 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 	return items, nil
 }
 
-const getUnsyncedMovies = `-- name: GetUnsyncedMovies :many
-SELECT m.id, m.title, m.air_date
-FROM medias m
-WHERE m.type = 'movie'
-  AND NOT EXISTS (
-    SELECT 1
-    FROM sourcelinks sl
-    WHERE sl.provider = ?1
-      AND sl.media_id = m.id
-      AND sl.season_id IS NULL
-  )
-`
-
-type GetUnsyncedMoviesRow struct {
-	ID      int64     `json:"id"`
-	Title   string    `json:"title"`
-	AirDate time.Time `json:"air_date"`
-}
-
-func (q *Queries) GetUnsyncedMovies(ctx context.Context, provider string) ([]GetUnsyncedMoviesRow, error) {
-	rows, err := q.db.QueryContext(ctx, getUnsyncedMovies, provider)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetUnsyncedMoviesRow
-	for rows.Next() {
-		var i GetUnsyncedMoviesRow
-		if err := rows.Scan(&i.ID, &i.Title, &i.AirDate); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getUnsyncedSeasons = `-- name: GetUnsyncedSeasons :many
+const getSeasonsWithoutPage = `-- name: GetSeasonsWithoutPage :many
 SELECT 
   s.id AS season_id,
   s.series_id,
@@ -182,14 +182,14 @@ JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND NOT EXISTS (
     SELECT 1
-    FROM sourcelinks sl
-    WHERE sl.provider = ?1
-      AND sl.media_id = s.series_id
-      AND sl.season_id = s.id
+    FROM pages p
+    WHERE p.provider = ?1
+      AND p.media_id = s.series_id
+      AND p.season_id = s.id
   )
 `
 
-type GetUnsyncedSeasonsRow struct {
+type GetSeasonsWithoutPageRow struct {
 	SeasonID     int64     `json:"season_id"`
 	SeriesID     int64     `json:"series_id"`
 	Type         string    `json:"type"`
@@ -198,15 +198,15 @@ type GetUnsyncedSeasonsRow struct {
 	SeasonNumber int64     `json:"season_number"`
 }
 
-func (q *Queries) GetUnsyncedSeasons(ctx context.Context, provider string) ([]GetUnsyncedSeasonsRow, error) {
-	rows, err := q.db.QueryContext(ctx, getUnsyncedSeasons, provider)
+func (q *Queries) GetSeasonsWithoutPage(ctx context.Context, provider string) ([]GetSeasonsWithoutPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, getSeasonsWithoutPage, provider)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []GetUnsyncedSeasonsRow
+	var items []GetSeasonsWithoutPageRow
 	for rows.Next() {
-		var i GetUnsyncedSeasonsRow
+		var i GetSeasonsWithoutPageRow
 		if err := rows.Scan(
 			&i.SeasonID,
 			&i.SeriesID,
@@ -280,6 +280,32 @@ func (q *Queries) UpsertMedia(ctx context.Context, arg UpsertMediaParams) (int64
 	return result.RowsAffected()
 }
 
+const upsertPages = `-- name: UpsertPages :execrows
+INSERT INTO pages (provider, media_id, season_id, detail_path)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT(provider, detail_path) DO NOTHING
+`
+
+type UpsertPagesParams struct {
+	Provider   string `json:"provider"`
+	MediaID    int64  `json:"media_id"`
+	SeasonID   *int64 `json:"season_id"`
+	DetailPath string `json:"detail_path"`
+}
+
+func (q *Queries) UpsertPages(ctx context.Context, arg UpsertPagesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertPages,
+		arg.Provider,
+		arg.MediaID,
+		arg.SeasonID,
+		arg.DetailPath,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertSeason = `-- name: UpsertSeason :execrows
 INSERT INTO seasons (series_id, season_number, episode_count, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -304,32 +330,6 @@ func (q *Queries) UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int
 		arg.EpisodeCount,
 		arg.AirDate,
 		arg.PosterPath,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const upsertSourcelink = `-- name: UpsertSourcelink :execrows
-INSERT INTO sourcelinks (provider, media_id, season_id, detail_path)
-VALUES (?1, ?2, ?3, ?4)
-ON CONFLICT(provider, detail_path) DO NOTHING
-`
-
-type UpsertSourcelinkParams struct {
-	Provider   string `json:"provider"`
-	MediaID    int64  `json:"media_id"`
-	SeasonID   *int64 `json:"season_id"`
-	DetailPath string `json:"detail_path"`
-}
-
-func (q *Queries) UpsertSourcelink(ctx context.Context, arg UpsertSourcelinkParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, upsertSourcelink,
-		arg.Provider,
-		arg.MediaID,
-		arg.SeasonID,
-		arg.DetailPath,
 	)
 	if err != nil {
 		return 0, err

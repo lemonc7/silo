@@ -36,19 +36,19 @@ VALUES (?1, ?2, ?3)
 ON CONFLICT(season_id, episode_number) DO UPDATE SET
   air_date = excluded.air_date;
 
--- name: GetUnsyncedMovies :many
+-- name: GetMoviesWithoutPage :many
 SELECT m.id, m.title, m.air_date
 FROM medias m
 WHERE m.type = 'movie'
   AND NOT EXISTS (
     SELECT 1
-    FROM sourcelinks sl
-    WHERE sl.provider = ?1
-      AND sl.media_id = m.id
-      AND sl.season_id IS NULL
+    FROM pages p
+    WHERE p.provider = ?1
+      AND p.media_id = m.id
+      AND p.season_id IS NULL
   );
 
--- name: GetUnsyncedSeasons :many
+-- name: GetSeasonsWithoutPage :many
 SELECT 
   s.id AS season_id,
   s.series_id,
@@ -61,27 +61,26 @@ JOIN medias m ON m.id = s.series_id
 WHERE m.type IN ('tv', 'anime')
   AND NOT EXISTS (
     SELECT 1
-    FROM sourcelinks sl
-    WHERE sl.provider = ?1
-      AND sl.media_id = s.series_id
-      AND sl.season_id = s.id
+    FROM pages p
+    WHERE p.provider = ?1
+      AND p.media_id = s.series_id
+      AND p.season_id = s.id
   );
 
--- name: UpsertSourcelink :execrows
-INSERT INTO sourcelinks (provider, media_id, season_id, detail_path)
+-- name: UpsertPages :execrows
+INSERT INTO pages (provider, media_id, season_id, detail_path)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(provider, detail_path) DO NOTHING;
 
-
--- name: GetMovieLinks :many
+-- name: GetMoviePages :many
 SELECT 
   m.id,
-  s.detail_path
+  p.detail_path
 FROM medias m
-JOIN sourcelinks s
+JOIN pages p
 WHERE
   m.type = 'movie'
   AND m.status IN ('wanted', 'monitoring')
-  AND s.provider = ?1
-  AND s.media_id = m.id
-  AND s.season_id IS NULL;
+  AND p.provider = ?1
+  AND p.media_id = m.id
+  AND p.season_id IS NULL;

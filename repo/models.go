@@ -16,17 +16,7 @@ type Episode struct {
 	Status        string    `json:"status"`
 }
 
-type Media struct {
-	ID         int64     `json:"id"`
-	TmdbID     int64     `json:"tmdb_id"`
-	Type       string    `json:"type"`
-	Title      string    `json:"title"`
-	AirDate    time.Time `json:"air_date"`
-	PosterPath string    `json:"poster_path"`
-	Status     string    `json:"status"`
-}
-
-type Resource struct {
+type Magnet struct {
 	ID         int64   `json:"id"`
 	MediaID    int64   `json:"media_id"`
 	SeasonID   *int64  `json:"season_id"`
@@ -38,6 +28,24 @@ type Resource struct {
 	Status     string  `json:"status"`
 }
 
+type Media struct {
+	ID         int64     `json:"id"`
+	TmdbID     int64     `json:"tmdb_id"`
+	Type       string    `json:"type"`
+	Title      string    `json:"title"`
+	AirDate    time.Time `json:"air_date"`
+	PosterPath string    `json:"poster_path"`
+	Status     string    `json:"status"`
+}
+
+type Page struct {
+	ID         int64  `json:"id"`
+	Provider   string `json:"provider"`
+	MediaID    int64  `json:"media_id"`
+	SeasonID   *int64 `json:"season_id"`
+	DetailPath string `json:"detail_path"`
+}
+
 type Season struct {
 	ID           int64     `json:"id"`
 	SeriesID     int64     `json:"series_id"`
@@ -45,12 +53,4 @@ type Season struct {
 	EpisodeCount int64     `json:"episode_count"`
 	AirDate      time.Time `json:"air_date"`
 	PosterPath   string    `json:"poster_path"`
-}
-
-type Sourcelink struct {
-	ID         int64  `json:"id"`
-	Provider   string `json:"provider"`
-	MediaID    int64  `json:"media_id"`
-	SeasonID   *int64 `json:"season_id"`
-	DetailPath string `json:"detail_path"`
 }
