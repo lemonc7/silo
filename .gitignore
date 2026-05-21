@@ -2,3 +2,4 @@ config.yml
 data/
 .vscode/
 test/
+*.json

@@ -10,82 +10,11 @@ import (
 	"time"
 )
 
-const getOutOfMedias = `-- name: GetOutOfMedias :many
-
-
-
-SELECT id, type, title, air_date
-FROM media
-WHERE status IN ('wanted', 'monitoring')
-`
-
-type GetOutOfMediasRow struct {
-	ID      int64     `json:"id"`
-	Type    string    `json:"type"`
-	Title   string    `json:"title"`
-	AirDate time.Time `json:"air_date"`
-}
-
-// -- name: GetOutOfMovies :many
-// SELECT id, title, air_date
-// FROM media
-// WHERE
-//
-//	type = 'movie'
-//	AND status IN ('wanted', 'monitoring');
-//
-// -- name: GetSeries :many
-// SELECT
-//
-//	m.id AS series_id,
-//	m.type,
-//	m.title,
-//	s.id AS season_id,
-//	s.season_number,
-//	s.air_date
-//
-// FROM media m
-// JOIN seasons s ON m.id = s.series_id
-// WHERE
-//
-//	type IN ('tv', 'anime')
-//	AND status IN ('wanted', 'monitoring')
-//
-// ORDER BY m.id, s.season_number;
-func (q *Queries) GetOutOfMedias(ctx context.Context) ([]GetOutOfMediasRow, error) {
-	rows, err := q.db.QueryContext(ctx, getOutOfMedias)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetOutOfMediasRow
-	for rows.Next() {
-		var i GetOutOfMediasRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Type,
-			&i.Title,
-			&i.AirDate,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getOutOfSyncSeasons = `-- name: GetOutOfSyncSeasons :many
 SELECT m.tmdb_id, s.id, s.season_number
 FROM seasons s
 JOIN media m ON m.id = s.series_id
-WHERE
-  m.type IN ('tv', 'anime')
+WHERE m.type IN ('tv', 'anime')
   AND m.status IN ('wanted', 'monitoring')
   AND s.episode_count > (
     SELECT COUNT(*) FROM episodes e WHERE e.season_id = s.id
@@ -124,8 +53,7 @@ func (q *Queries) GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeason
 const getOutOfSyncTVs = `-- name: GetOutOfSyncTVs :many
 SELECT id, tmdb_id
 FROM media
-WHERE
-  type IN ('tv', 'anime')
+WHERE type IN ('tv', 'anime')
   AND status IN ('wanted', 'monitoring')
 `
 
@@ -157,11 +85,111 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 	return items, nil
 }
 
+const getUnsyncedMovies = `-- name: GetUnsyncedMovies :many
+SELECT m.id, m.title, m.air_date
+FROM media m
+WHERE m.type = 'movie'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM sourcelinks sl
+    WHERE sl.provider = ?1
+      AND sl.media_id = m.id
+      AND sl.season_id IS NULL
+  )
+`
+
+type GetUnsyncedMoviesRow struct {
+	ID      int64     `json:"id"`
+	Title   string    `json:"title"`
+	AirDate time.Time `json:"air_date"`
+}
+
+func (q *Queries) GetUnsyncedMovies(ctx context.Context, provider string) ([]GetUnsyncedMoviesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUnsyncedMovies, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUnsyncedMoviesRow
+	for rows.Next() {
+		var i GetUnsyncedMoviesRow
+		if err := rows.Scan(&i.ID, &i.Title, &i.AirDate); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUnsyncedSeasons = `-- name: GetUnsyncedSeasons :many
+SELECT s.id AS season_id,
+       s.series_id,
+       m.type,
+       m.title,
+       s.air_date,
+       s.season_number
+FROM seasons s
+JOIN media m ON m.id = s.series_id
+WHERE m.type IN ('tv', 'anime')
+  AND NOT EXISTS (
+    SELECT 1
+    FROM sourcelinks sl
+    WHERE sl.provider = ?1
+      AND sl.media_id = s.series_id
+      AND sl.season_id = s.id
+  )
+`
+
+type GetUnsyncedSeasonsRow struct {
+	SeasonID     int64     `json:"season_id"`
+	SeriesID     int64     `json:"series_id"`
+	Type         string    `json:"type"`
+	Title        string    `json:"title"`
+	AirDate      time.Time `json:"air_date"`
+	SeasonNumber int64     `json:"season_number"`
+}
+
+func (q *Queries) GetUnsyncedSeasons(ctx context.Context, provider string) ([]GetUnsyncedSeasonsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUnsyncedSeasons, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUnsyncedSeasonsRow
+	for rows.Next() {
+		var i GetUnsyncedSeasonsRow
+		if err := rows.Scan(
+			&i.SeasonID,
+			&i.SeriesID,
+			&i.Type,
+			&i.Title,
+			&i.AirDate,
+			&i.SeasonNumber,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertEpisode = `-- name: UpsertEpisode :execrows
 INSERT INTO episodes (season_id, episode_number, air_date)
 VALUES (?1, ?2, ?3)
 ON CONFLICT(season_id, episode_number) DO UPDATE SET
-    air_date = excluded.air_date
+  air_date = excluded.air_date
 `
 
 type UpsertEpisodeParams struct {
@@ -213,9 +241,9 @@ const upsertSeason = `-- name: UpsertSeason :execrows
 INSERT INTO seasons (series_id, season_number, episode_count, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT(series_id, season_number) DO UPDATE SET
-    episode_count = excluded.episode_count,
-    air_date = excluded.air_date,
-    poster_path   = excluded.poster_path
+  episode_count = excluded.episode_count,
+  air_date = excluded.air_date,
+  poster_path = excluded.poster_path
 `
 
 type UpsertSeasonParams struct {
@@ -240,21 +268,21 @@ func (q *Queries) UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int
 	return result.RowsAffected()
 }
 
-const upsertSourceLinks = `-- name: UpsertSourceLinks :execrows
+const upsertSourcelink = `-- name: UpsertSourcelink :execrows
 INSERT INTO sourcelinks (provider, media_id, season_id, detail_path)
 VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(provider, detail_path) DO NOTHING
 `
 
-type UpsertSourceLinksParams struct {
+type UpsertSourcelinkParams struct {
 	Provider   string `json:"provider"`
 	MediaID    int64  `json:"media_id"`
 	SeasonID   *int64 `json:"season_id"`
 	DetailPath string `json:"detail_path"`
 }
 
-func (q *Queries) UpsertSourceLinks(ctx context.Context, arg UpsertSourceLinksParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, upsertSourceLinks,
+func (q *Queries) UpsertSourcelink(ctx context.Context, arg UpsertSourcelinkParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertSourcelink,
 		arg.Provider,
 		arg.MediaID,
 		arg.SeasonID,

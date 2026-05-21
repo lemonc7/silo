@@ -102,23 +102,62 @@ func (s *SyncService) SyncEpisode(ctx context.Context) error {
 	return nil
 }
 
-func (s *SyncService) SyncResourceLink(ctx context.Context) error {
-	items, err := s.repo.GetOutOfMedias(ctx)
+func (s *SyncService) SyncMovieResourceLink(ctx context.Context) error {
+	movies, err := s.repo.GetUnsyncedMovies(ctx, "bt")
 	if err != nil {
-		return fmt.Errorf("获取需要爬取资源的媒体: %w", err)
+		return fmt.Errorf("获取需要同步资源详情页的电影: %w", err)
 	}
 
-	for _, item := range items {
-		_, err := s.release.Resolve(ctx, release.Media{
-			Type:  catalog.MediaType(item.Type),
-			Title: item.Title,
-			Year:  item.AirDate.Year(),
+	for _, m := range movies {
+		result, err := s.release.Resolve(ctx, release.Media{
+			Type:  catalog.MediaTypeMovie,
+			Title: m.Title,
+			Year:  m.AirDate.Year(),
 		})
 		if err != nil {
-			fmt.Printf("[bt] 获取资源详情页链接失败: %v", err)
+			log.Printf("[sync] 获取电影[%s]资源链接失败: %v", m.Title, err)
+			continue
+		}
+		_, err = s.repo.UpsertSourcelink(ctx, repo.UpsertSourcelinkParams{
+			Provider:   "bt",
+			MediaID:    m.ID,
+			SeasonID:   nil,
+			DetailPath: result,
+		})
+		if err != nil {
+			log.Printf("[sync] 插入电影[%s]资源链接失败: %v", m.Title, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *SyncService) SyncSeriesResourceLink(ctx context.Context) error {
+	seasons, err := s.repo.GetUnsyncedSeasons(ctx, "bt")
+	if err != nil {
+		return fmt.Errorf("获取需要同步资源详情页的季: %w", err)
+	}
+
+	for _, season := range seasons {
+		result, err := s.release.Resolve(ctx, release.Media{
+			Title: season.Title,
+			Type:  catalog.MediaType(season.Type),
+			Year:  season.AirDate.Year(),
+		})
+
+		if err != nil {
+			log.Printf("[sync] 获取剧集[%s]资源链接失败: %v", season.Title, err)
 			continue
 		}
 
+		if _, err := s.repo.UpsertSourcelink(ctx, repo.UpsertSourcelinkParams{
+			Provider:   "bt",
+			MediaID:    season.SeriesID,
+			SeasonID:   &season.SeasonID,
+			DetailPath: result,
+		}); err != nil {
+			log.Printf("[sync] 插入剧集[%s-%d]资源链接失败: %v", season.Title, season.SeasonNumber, err)
+		}
 	}
 
 	return nil
