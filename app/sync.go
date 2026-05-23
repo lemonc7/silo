@@ -24,7 +24,7 @@ func NewService(repo repo.Querier, catalog catalog.Provider, release release.Pro
 func (s *Service) SyncMedia(ctx context.Context) error {
 	items, err := s.catalog.FetchMedia(ctx)
 	if err != nil {
-		return fmt.Errorf("获取TMDB媒体信息: %w", err)
+		return fmt.Errorf("获取媒体信息: %w", err)
 	}
 
 	for _, item := range items {
@@ -35,11 +35,10 @@ func (s *Service) SyncMedia(ctx context.Context) error {
 			AirDate:    item.AirDate,
 			PosterPath: item.PosterPath,
 		}); err != nil {
-			return fmt.Errorf("插入TMDB媒体[%d]到数据库: %w", item.TmdbID, err)
+			return fmt.Errorf("插入[%s]到数据库: %w", item.Title, err)
 		}
 	}
 
-	log.Printf("[sync] 媒体已同步 %d 条", len(items))
 	return nil
 }
 
@@ -52,7 +51,7 @@ func (s *Service) SyncSeason(ctx context.Context) error {
 	for _, t := range tvs {
 		seasons, err := s.catalog.FetchSeasons(ctx, t.TmdbID)
 		if err != nil {
-			log.Printf("[sync] 跳过剧集 %d: 获取季信息失败: %v", t.TmdbID, err)
+			log.Printf("[catalog] 跳过剧集 %d: 获取季信息失败: %v", t.TmdbID, err)
 			continue
 		}
 
@@ -65,7 +64,7 @@ func (s *Service) SyncSeason(ctx context.Context) error {
 				PosterPath:   season.PosterPath,
 			})
 			if err != nil {
-				log.Printf("[sync] 跳过剧集 %d: 插入季(%d)信息失败: %v", t.TmdbID, season.SeasonNumber, err)
+				log.Printf("[db] 跳过剧集 %d: 插入季(%d)信息失败: %v", t.TmdbID, season.SeasonNumber, err)
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -83,7 +82,7 @@ func (s *Service) SyncEpisode(ctx context.Context) error {
 	for _, se := range seasons {
 		episodes, err := s.catalog.FetchEpisodes(ctx, se.TmdbID, se.SeasonNumber)
 		if err != nil {
-			log.Printf("[sync] 跳过季 %d: 获取集信息失败: %v", se.ID, err)
+			log.Printf("[catalog] 跳过季 %d: 获取集信息失败: %v", se.ID, err)
 			continue
 		}
 
@@ -93,7 +92,7 @@ func (s *Service) SyncEpisode(ctx context.Context) error {
 				EpisodeNumber: ep.EpisodeNumber,
 				AirDate:       ep.AirDate,
 			}); err != nil {
-				log.Printf("[sync] 跳过集 %d: 插入数据库失败: %v", ep.EpisodeNumber, err)
+				log.Printf("[db] 跳过集 %d: 插入数据库失败: %v", ep.EpisodeNumber, err)
 			}
 		}
 
@@ -115,7 +114,7 @@ func (s *Service) SyncMoviePage(ctx context.Context) error {
 			Year:  m.AirDate.Year(),
 		})
 		if err != nil {
-			log.Printf("[sync] 获取电影[%s]资源链接失败: %v", m.Title, err)
+			log.Printf("[release] 获取电影[%s]资源链接失败: %v", m.Title, err)
 			continue
 		}
 		_, err = s.repo.UpsertPages(ctx, repo.UpsertPagesParams{
@@ -125,7 +124,7 @@ func (s *Service) SyncMoviePage(ctx context.Context) error {
 			DetailPath: result,
 		})
 		if err != nil {
-			log.Printf("[sync] 插入电影[%s]资源链接失败: %v", m.Title, err)
+			log.Printf("[db] 插入电影[%s]资源链接失败: %v", m.Title, err)
 		}
 	}
 
@@ -146,7 +145,7 @@ func (s *Service) SyncSeriesPage(ctx context.Context) error {
 		})
 
 		if err != nil {
-			log.Printf("[sync] 获取剧集[%s]资源链接失败: %v", season.Title, err)
+			log.Printf("[release] 获取剧集[%s]资源链接失败: %v", season.Title, err)
 			continue
 		}
 
@@ -156,7 +155,7 @@ func (s *Service) SyncSeriesPage(ctx context.Context) error {
 			SeasonID:   &season.SeasonID,
 			DetailPath: result,
 		}); err != nil {
-			log.Printf("[sync] 插入剧集[%s-%d]资源链接失败: %v", season.Title, season.SeasonNumber, err)
+			log.Printf("[db] 插入剧集[%s-%d]资源链接失败: %v", season.Title, season.SeasonNumber, err)
 		}
 	}
 
@@ -175,11 +174,23 @@ func (s *Service) SyncMovieMagnets(ctx context.Context) error {
 			SeasonID: nil,
 		})
 		if err != nil {
-			log.Printf("[sync] 获取磁力链接失败: %v", err)
+			log.Printf("[release] 获取磁力链接失败: %v", err)
 			continue
 		}
 
-		fmt.Println(ts)
+		for _, t := range ts {
+			if _, err := s.repo.UpsertMagnets(ctx, repo.UpsertMagnetsParams{
+				MediaID:   item.ID,
+				Title:     t.Title,
+				MagnetUrl: t.Magnet,
+				SizeMb:    t.Size,
+				Seeder:    t.Seeder,
+				Profile:   t.Profile,
+			}); err != nil {
+				log.Printf("[db] 插入电影磁力链接失败: %v", err)
+				continue
+			}
+		}
 	}
 
 	return nil

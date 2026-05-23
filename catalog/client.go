@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -15,7 +14,6 @@ import (
 	"github.com/lemonc7/silo/config"
 )
 
-// HTTPClient 基于 TMDB v3 API + Bearer Token 认证。
 type HTTPClient struct {
 	bearerToken string
 	accountID   string
@@ -37,7 +35,6 @@ func NewHTTPClient(cfg config.TMDBConfig) *HTTPClient {
 	}
 	c.buildClient()
 
-	log.Printf("[tmdb] ready: account_id=%s", c.accountID)
 	return c
 }
 
@@ -112,16 +109,12 @@ func (c *HTTPClient) fetchWatchlist(ctx context.Context, media string) ([]MediaI
 
 		all = append(all, body.Results...)
 
-		log.Printf("[tmdb] watchlist/%s page %d/%d (%d items)",
-			media, page, body.TotalPages, len(all))
-
 		if page >= body.TotalPages {
 			break
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	log.Printf("[tmdb] watchlist/%s done: %d items", media, len(all))
 	return all, nil
 }
 

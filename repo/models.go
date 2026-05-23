@@ -8,12 +8,36 @@ import (
 	"time"
 )
 
+type Download struct {
+	ID        int64   `json:"id"`
+	MediaID   int64   `json:"media_id"`
+	SeasonID  *int64  `json:"season_id"`
+	EpisodeID *int64  `json:"episode_id"`
+	MagnetID  int64   `json:"magnet_id"`
+	QbHash    *string `json:"qb_hash"`
+	Status    string  `json:"status"`
+	Error     *string `json:"error"`
+}
+
 type Episode struct {
 	ID            int64     `json:"id"`
 	SeasonID      int64     `json:"season_id"`
 	EpisodeNumber int64     `json:"episode_number"`
 	AirDate       time.Time `json:"air_date"`
 	Status        string    `json:"status"`
+}
+
+type Magnet struct {
+	ID        int64   `json:"id"`
+	MediaID   int64   `json:"media_id"`
+	SeasonID  *int64  `json:"season_id"`
+	EpisodeID *int64  `json:"episode_id"`
+	Title     string  `json:"title"`
+	MagnetUrl string  `json:"magnet_url"`
+	SizeMb    float64 `json:"size_mb"`
+	Seeder    int64   `json:"seeder"`
+	Profile   string  `json:"profile"`
+	Status    string  `json:"status"`
 }
 
 type Media struct {
@@ -32,6 +56,11 @@ type Page struct {
 	MediaID    int64  `json:"media_id"`
 	SeasonID   *int64 `json:"season_id"`
 	DetailPath string `json:"detail_path"`
+}
+
+type ProfilePriority struct {
+	Profile  string `json:"profile"`
+	Priority int64  `json:"priority"`
 }
 
 type Season struct {

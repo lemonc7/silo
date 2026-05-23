@@ -9,14 +9,17 @@ import (
 )
 
 type Querier interface {
+	GetBestMagnetOfMovie(ctx context.Context, arg GetBestMagnetOfMovieParams) (GetBestMagnetOfMovieRow, error)
 	GetMoviePages(ctx context.Context, provider string) ([]GetMoviePagesRow, error)
 	GetMoviesWithoutPage(ctx context.Context, provider string) ([]GetMoviesWithoutPageRow, error)
 	GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeasonsRow, error)
 	GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, error)
 	GetSeasonsWithoutPage(ctx context.Context, provider string) ([]GetSeasonsWithoutPageRow, error)
 	UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (int64, error)
+	UpsertMagnets(ctx context.Context, arg UpsertMagnetsParams) (int64, error)
 	UpsertMedia(ctx context.Context, arg UpsertMediaParams) (int64, error)
 	UpsertPages(ctx context.Context, arg UpsertPagesParams) (int64, error)
+	UpsertProfilePriority(ctx context.Context, arg UpsertProfilePriorityParams) (int64, error)
 	UpsertSeason(ctx context.Context, arg UpsertSeasonParams) (int64, error)
 }
 

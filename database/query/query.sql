@@ -83,3 +83,53 @@ WHERE
   AND m.status IN ('wanted', 'monitoring')
   AND p.provider = ?1
   AND p.season_id IS NULL;
+
+-- name: GetBestMagnetOfMovie :one
+SELECT
+  m.id,
+  m.media_id,
+  m.magnet_url
+FROM magnets m
+LEFT JOIN profile_priorities pp
+  ON pp.profile = m.profile
+WHERE
+  m.media_id = @media_id
+  AND m.size_mb >= @min_size_mb
+  AND m.size_mb <= @max_size_mb
+  AND m.season_id IS NULL
+  AND m.episode_id IS NULL
+  AND m.status = 'available'
+ORDER BY
+  pp.priority IS NULL,
+  pp.priority ASC,
+  m.seeder DESC,
+  m.size_mb DESC
+LIMIT 1;
+
+
+-- name: UpsertMagnets :execrows
+INSERT INTO magnets (
+  media_id, 
+  season_id, 
+  episode_id, 
+  title, 
+  magnet_url,
+  size_mb,
+  seeder,
+  profile
+) VALUES (
+  ?1,
+  ?2,
+  ?3,
+  ?4,
+  ?5,
+  ?6,
+  ?7,
+  ?8
+) ON CONFLICT(magnet_url) DO NOTHING;
+
+-- name: UpsertProfilePriority :execrows
+INSERT INTO profile_priorities (profile, priority)
+VALUES (?1, ?2)
+ON CONFLICT(profile) DO UPDATE SET
+  priority = excluded.priority;

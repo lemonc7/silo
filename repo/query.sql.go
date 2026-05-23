@@ -10,6 +10,48 @@ import (
 	"time"
 )
 
+const getBestMagnetOfMovie = `-- name: GetBestMagnetOfMovie :one
+SELECT
+  m.id,
+  m.media_id,
+  m.magnet_url
+FROM magnets m
+LEFT JOIN profile_priorities pp
+  ON pp.profile = m.profile
+WHERE
+  m.media_id = ?1
+  AND m.size_mb >= ?2
+  AND m.size_mb <= ?3
+  AND m.season_id IS NULL
+  AND m.episode_id IS NULL
+  AND m.status = 'available'
+ORDER BY
+  pp.priority IS NULL,
+  pp.priority ASC,
+  m.seeder DESC,
+  m.size_mb DESC
+LIMIT 1
+`
+
+type GetBestMagnetOfMovieParams struct {
+	MediaID   int64   `json:"media_id"`
+	MinSizeMb float64 `json:"min_size_mb"`
+	MaxSizeMb float64 `json:"max_size_mb"`
+}
+
+type GetBestMagnetOfMovieRow struct {
+	ID        int64  `json:"id"`
+	MediaID   int64  `json:"media_id"`
+	MagnetUrl string `json:"magnet_url"`
+}
+
+func (q *Queries) GetBestMagnetOfMovie(ctx context.Context, arg GetBestMagnetOfMovieParams) (GetBestMagnetOfMovieRow, error) {
+	row := q.db.QueryRowContext(ctx, getBestMagnetOfMovie, arg.MediaID, arg.MinSizeMb, arg.MaxSizeMb)
+	var i GetBestMagnetOfMovieRow
+	err := row.Scan(&i.ID, &i.MediaID, &i.MagnetUrl)
+	return i, err
+}
+
 const getMoviePages = `-- name: GetMoviePages :many
 SELECT 
   m.id,
@@ -248,6 +290,56 @@ func (q *Queries) UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (i
 	return result.RowsAffected()
 }
 
+const upsertMagnets = `-- name: UpsertMagnets :execrows
+INSERT INTO magnets (
+  media_id, 
+  season_id, 
+  episode_id, 
+  title, 
+  magnet_url,
+  size_mb,
+  seeder,
+  profile
+) VALUES (
+  ?1,
+  ?2,
+  ?3,
+  ?4,
+  ?5,
+  ?6,
+  ?7,
+  ?8
+) ON CONFLICT(magnet_url) DO NOTHING
+`
+
+type UpsertMagnetsParams struct {
+	MediaID   int64   `json:"media_id"`
+	SeasonID  *int64  `json:"season_id"`
+	EpisodeID *int64  `json:"episode_id"`
+	Title     string  `json:"title"`
+	MagnetUrl string  `json:"magnet_url"`
+	SizeMb    float64 `json:"size_mb"`
+	Seeder    int64   `json:"seeder"`
+	Profile   string  `json:"profile"`
+}
+
+func (q *Queries) UpsertMagnets(ctx context.Context, arg UpsertMagnetsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertMagnets,
+		arg.MediaID,
+		arg.SeasonID,
+		arg.EpisodeID,
+		arg.Title,
+		arg.MagnetUrl,
+		arg.SizeMb,
+		arg.Seeder,
+		arg.Profile,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertMedia = `-- name: UpsertMedia :execrows
 INSERT INTO medias (tmdb_id, type, title, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -299,6 +391,26 @@ func (q *Queries) UpsertPages(ctx context.Context, arg UpsertPagesParams) (int64
 		arg.SeasonID,
 		arg.DetailPath,
 	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertProfilePriority = `-- name: UpsertProfilePriority :execrows
+INSERT INTO profile_priorities (profile, priority)
+VALUES (?1, ?2)
+ON CONFLICT(profile) DO UPDATE SET
+  priority = excluded.priority
+`
+
+type UpsertProfilePriorityParams struct {
+	Profile  string `json:"profile"`
+	Priority int64  `json:"priority"`
+}
+
+func (q *Queries) UpsertProfilePriority(ctx context.Context, arg UpsertProfilePriorityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertProfilePriority, arg.Profile, arg.Priority)
 	if err != nil {
 		return 0, err
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"github.com/lemonc7/silo/app"
@@ -33,8 +34,19 @@ func main() {
 		panic(err)
 	}
 
+	rp := repo.New(db)
+	for i, p := range cfg.Resource.Profiles {
+		if _, err := rp.UpsertProfilePriority(ctx, repo.UpsertProfilePriorityParams{
+			Profile:  p,
+			Priority: int64(i),
+		}); err != nil {
+			log.Printf("[db] 插入磁力优先级标签失败: %v", err)
+			continue
+		}
+	}
+
 	srv := app.NewService(
-		repo.New(db),
+		rp,
 		catalog.NewHTTPClient(cfg.TMDB),
 		rl,
 	)
