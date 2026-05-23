@@ -11,17 +11,17 @@ import (
 	"github.com/lemonc7/silo/repo"
 )
 
-type SyncService struct {
+type Service struct {
 	repo    repo.Querier
 	catalog catalog.Provider
 	release release.Provider
 }
 
-func NewMediaService(repo repo.Querier, catalog catalog.Provider, release release.Provider) *SyncService {
-	return &SyncService{repo: repo, catalog: catalog, release: release}
+func NewService(repo repo.Querier, catalog catalog.Provider, release release.Provider) *Service {
+	return &Service{repo: repo, catalog: catalog, release: release}
 }
 
-func (s *SyncService) SyncMedia(ctx context.Context) error {
+func (s *Service) SyncMedia(ctx context.Context) error {
 	items, err := s.catalog.FetchMedia(ctx)
 	if err != nil {
 		return fmt.Errorf("获取TMDB媒体信息: %w", err)
@@ -43,7 +43,7 @@ func (s *SyncService) SyncMedia(ctx context.Context) error {
 	return nil
 }
 
-func (s *SyncService) SyncSeason(ctx context.Context) error {
+func (s *Service) SyncSeason(ctx context.Context) error {
 	tvs, err := s.repo.GetOutOfSyncTVs(ctx)
 	if err != nil {
 		return fmt.Errorf("获取待同步的剧集: %w", err)
@@ -74,7 +74,7 @@ func (s *SyncService) SyncSeason(ctx context.Context) error {
 	return nil
 }
 
-func (s *SyncService) SyncEpisode(ctx context.Context) error {
+func (s *Service) SyncEpisode(ctx context.Context) error {
 	seasons, err := s.repo.GetOutOfSyncSeasons(ctx)
 	if err != nil {
 		return fmt.Errorf("获取待同步的季: %w", err)
@@ -102,7 +102,7 @@ func (s *SyncService) SyncEpisode(ctx context.Context) error {
 	return nil
 }
 
-func (s *SyncService) SyncMoviePage(ctx context.Context) error {
+func (s *Service) SyncMoviePage(ctx context.Context) error {
 	movies, err := s.repo.GetMoviesWithoutPage(ctx, "bt")
 	if err != nil {
 		return fmt.Errorf("获取需要同步资源详情页的电影: %w", err)
@@ -132,7 +132,7 @@ func (s *SyncService) SyncMoviePage(ctx context.Context) error {
 	return nil
 }
 
-func (s *SyncService) SyncSeriesPage(ctx context.Context) error {
+func (s *Service) SyncSeriesPage(ctx context.Context) error {
 	seasons, err := s.repo.GetSeasonsWithoutPage(ctx, "bt")
 	if err != nil {
 		return fmt.Errorf("获取需要同步资源详情页的季: %w", err)
@@ -158,6 +158,28 @@ func (s *SyncService) SyncSeriesPage(ctx context.Context) error {
 		}); err != nil {
 			log.Printf("[sync] 插入剧集[%s-%d]资源链接失败: %v", season.Title, season.SeasonNumber, err)
 		}
+	}
+
+	return nil
+}
+
+func (s *Service) SyncMovieMagnets(ctx context.Context) error {
+	items, err := s.repo.GetMoviePages(ctx, "bt")
+	if err != nil {
+		return fmt.Errorf("获取电影详情页链接: %w", err)
+	}
+	for _, item := range items {
+		ts, err := s.release.FetchReleases(ctx, release.Resource{
+			Target:   item.DetailPath,
+			Type:     catalog.MediaTypeMovie,
+			SeasonID: nil,
+		})
+		if err != nil {
+			log.Printf("[sync] 获取磁力链接失败: %v", err)
+			continue
+		}
+
+		fmt.Println(ts)
 	}
 
 	return nil

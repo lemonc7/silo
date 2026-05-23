@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +37,7 @@ type BTClient struct {
 var _ Provider = (*BTClient)(nil)
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
-	resPattern := strings.Join(cfg.Resolutions, "|")
+	resPattern := strings.Join(cfg.Profiles, "|")
 	pattern := fmt.Sprintf(`^中字(%s)$`, resPattern)
 	return &BTClient{
 		cfg:   cfg,
@@ -139,14 +141,24 @@ func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent,
 	page = page.Context(ctx)
 
 	var torrents []Torrent
-
-	tabs, err := page.Elements("ul.nav-tabs > li")
+	popupButton, err := page.Element("div.popup-close")
+	if err != nil {
+		return nil, fmt.Errorf("弹窗关闭按钮: %w", err)
+	}
+	if err := popupButton.Click(proto.InputMouseButtonLeft, 1); err != nil {
+		return nil, fmt.Errorf("关闭弹窗: %w", err)
+	}
+	tabParent, err := page.Element("ul.nav-tabs")
 	if err != nil {
 		return nil, fmt.Errorf("资源标签页: %w", err)
 	}
+	tabs, err := tabParent.Elements("li")
+	if err != nil {
+		return nil, fmt.Errorf("资源标签页列表: %w", err)
+	}
 	// 无磁力链接提前返回
 	if len(tabs) == 1 {
-		return nil, fmt.Errorf("资源无磁力链接或期望的磁力链接")
+		return nil, fmt.Errorf("资源无(期望的)磁力链接")
 	}
 
 	for _, tab := range tabs {
@@ -154,20 +166,24 @@ func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent,
 		if err != nil {
 			return nil, fmt.Errorf("标签页名称: %w", err)
 		}
-		matches := c.re.FindStringSubmatch(text)
-		if len(matches) != 2 {
+		profile := strings.Fields(text)[0]
+		if !slices.Contains(c.cfg.Profiles, profile) {
 			continue
 		}
 
 		if err := tab.Click(proto.InputMouseButtonLeft, 1); err != nil {
 			return nil, fmt.Errorf("点击标签页: %w", err)
 		}
-		rows, err := page.Elements("table.bit_list > tbody > tr")
+		table, err := page.Element("table.bit_list > tbody")
 		if err != nil {
-			return nil, fmt.Errorf("读取资源列表失败: %w", err)
+			return nil, fmt.Errorf("资源表格: %w", err)
+		}
+		rows, err := table.Elements("tr")
+		if err != nil {
+			return nil, fmt.Errorf("读取资源列表: %w", err)
 		}
 
-		ts, err := getTorrents(rows)
+		ts, err := getTorrents(rows, profile)
 		if err != nil {
 			return nil, fmt.Errorf("获取磁力链接: %w", err)
 		}
@@ -376,6 +392,88 @@ func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
 	return false
 }
 
-func getTorrents(elems rod.Elements) ([]Torrent, error) {
-	return nil, nil
+func getTorrents(rows rod.Elements, profile string) ([]Torrent, error) {
+	var ts []Torrent
+	for _, row := range rows {
+		visible, err := row.Visible()
+		if err != nil {
+			return nil, fmt.Errorf("元素可视性: %w", err)
+		}
+		if !visible {
+			continue
+		}
+
+		nameEl, err := row.Element(`a.svg-tf[href^="magnet:"]`)
+		if err != nil {
+			return nil, fmt.Errorf("名称列: %w", err)
+		}
+		title, err := nameEl.Text()
+		if err != nil {
+			return nil, fmt.Errorf("获取标题: %w", err)
+		}
+		href, err := nameEl.Attribute("href")
+		if err != nil {
+			return nil, fmt.Errorf("读取磁力链接: %w", err)
+		}
+		var magnet string
+		if href != nil {
+			magnet = *href
+		}
+
+		sizeEl, err := row.Element("td:nth-child(3)")
+		if err != nil {
+			return nil, fmt.Errorf("大小列: %w", err)
+		}
+		size, err := sizeEl.Text()
+		if err != nil {
+			return nil, fmt.Errorf("获取资源大小: %w", err)
+		}
+
+		seederEl, err := row.Element("td:nth-child(4) > i")
+		if err != nil {
+			return nil, fmt.Errorf("做种列: %w", err)
+		}
+		seederStr, err := seederEl.Text()
+		if err != nil {
+			return nil, fmt.Errorf("获取做种数: %w", err)
+		}
+		seeder, _ := strconv.Atoi(seederStr)
+
+		ts = append(ts, Torrent{
+			Title:   title,
+			Magnet:  magnet,
+			Size:    parseSizeMB(size),
+			Seeder:  int64(seeder),
+			Profile: profile,
+		})
+	}
+
+	return ts, nil
+}
+
+var sizeRe = regexp.MustCompile(`(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?b)\s*$`)
+
+func parseSizeMB(raw string) float64 {
+	matches := sizeRe.FindStringSubmatch(strings.TrimSpace(raw))
+	if len(matches) != 3 {
+		return 0
+	}
+
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return 0
+	}
+
+	switch strings.ToUpper(matches[2]) {
+	case "KB":
+		return value / 1024
+	case "MB":
+		return value
+	case "GB":
+		return value * 1024
+	case "TB":
+		return value * 1024 * 1024
+	default:
+		return 0
+	}
 }

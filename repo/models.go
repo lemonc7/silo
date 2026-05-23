@@ -16,18 +16,6 @@ type Episode struct {
 	Status        string    `json:"status"`
 }
 
-type Magnet struct {
-	ID         int64   `json:"id"`
-	MediaID    int64   `json:"media_id"`
-	SeasonID   *int64  `json:"season_id"`
-	EpisodeID  *int64  `json:"episode_id"`
-	MagnetUrl  string  `json:"magnet_url"`
-	Seeders    int64   `json:"seeders"`
-	IsChinese  int64   `json:"is_chinese"`
-	Resolution *string `json:"resolution"`
-	Status     string  `json:"status"`
-}
-
 type Media struct {
 	ID         int64     `json:"id"`
 	TmdbID     int64     `json:"tmdb_id"`

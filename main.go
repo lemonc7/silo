@@ -33,7 +33,7 @@ func main() {
 		panic(err)
 	}
 
-	srv := app.NewMediaService(
+	srv := app.NewService(
 		repo.New(db),
 		catalog.NewHTTPClient(cfg.TMDB),
 		rl,
@@ -52,6 +52,10 @@ func main() {
 		panic(err)
 	}
 	if err := srv.SyncSeriesPage(ctx); err != nil {
+		panic(err)
+	}
+
+	if err := srv.SyncMovieMagnets(ctx); err != nil {
 		panic(err)
 	}
 }

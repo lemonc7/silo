@@ -48,11 +48,10 @@ func (d *DatabaseConfig) DSN(path string) string {
 }
 
 type ResourceConfig struct {
-	URL         string  `yaml:"url" env:"BT_URL"`
-	Username    string  `yaml:"username" env:"BT_USERNAME"`
-	Password    string  `yaml:"password" env:"BT_PASSWORD"`
-	MinSizeGB   float64 `yaml:"min_size_gb" env:"BT_MIN_SIZE_GB" env-default:"1.0"`
-	Resolutions []string `yaml:"resolutions" env:"BT_RESOLUTIONS"`
+	URL      string   `yaml:"url" env:"BT_URL"`
+	Username string   `yaml:"username" env:"BT_USERNAME"`
+	Password string   `yaml:"password" env:"BT_PASSWORD"`
+	Profiles []string `yaml:"profiles" env:"BT_PROFILES"`
 }
 
 type DownloaderConfig struct {

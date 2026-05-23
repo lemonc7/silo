@@ -17,7 +17,7 @@ WHERE m.type IN ('tv', 'anime')
 -- name: UpsertMedia :execrows
 INSERT INTO medias (tmdb_id, type, title, air_date, poster_path)
 VALUES (?1, ?2, ?3, ?4, ?5)
-ON CONFLICT(tmdb_id) DO UPDATE SET
+ON CONFLICT(tmdb_id, type) DO UPDATE SET
   title = excluded.title,
   air_date = excluded.air_date,
   poster_path = excluded.poster_path;
@@ -76,11 +76,10 @@ ON CONFLICT(provider, detail_path) DO NOTHING;
 SELECT 
   m.id,
   p.detail_path
-FROM medias m
-JOIN pages p
+FROM pages p
+JOIN medias m ON m.id = p.media_id
 WHERE
   m.type = 'movie'
   AND m.status IN ('wanted', 'monitoring')
   AND p.provider = ?1
-  AND p.media_id = m.id
   AND p.season_id IS NULL;

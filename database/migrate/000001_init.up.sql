@@ -1,12 +1,13 @@
 CREATE TABLE IF NOT EXISTS medias (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tmdb_id INTEGER NOT NULL UNIQUE,
+    tmdb_id INTEGER NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('movie', 'tv', 'anime')),
     title TEXT NOT NULL,
     air_date DATETIME NOT NULL,
     poster_path TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'wanted'
-      CHECK(status IN ('wanted', 'monitoring', 'completed', 'ignored'))
+      CHECK(status IN ('wanted', 'monitoring', 'completed', 'ignored')),
+    UNIQUE(tmdb_id, type)
 );
 
 CREATE TABLE IF NOT EXISTS seasons (
@@ -36,17 +37,4 @@ CREATE TABLE IF NOT EXISTS pages (
     season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
     detail_path TEXT NOT NULL,
     UNIQUE(provider, detail_path)
-);
-
-CREATE TABLE IF NOT EXISTS magnets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
-    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
-    episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
-    magnet_url TEXT NOT NULL UNIQUE,
-    seeders INTEGER NOT NULL DEFAULT 0,
-    resolution TEXT,
-    status TEXT NOT NULL DEFAULT 'available'
-      CHECK(status IN ('available', 'downloading', 'downloaded', 'failed')),
-    UNIQUE(media_id, season_id, episode_id, magnet_url)
 );
