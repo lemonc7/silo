@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1](https://github.com/lemonc7/silo/compare/v0.3.0...v0.3.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* 优化磁力链接爬取代码 ([646f4b1](https://github.com/lemonc7/silo/commit/646f4b1ff5405082fdaf1dd39735e3e58a6cf488))
+* 增加磁力链接爬取逻辑 ([a01014f](https://github.com/lemonc7/silo/commit/a01014f76c3ec2eecba1221d8b13e5d2d9e65b16))
+* 爬取电影磁力链接，并插入到数据库中 ([e46367f](https://github.com/lemonc7/silo/commit/e46367fdcab5a959be40aa0fd1e0a4c3b30098f0))
+
 ## [0.3.0](https://github.com/lemonc7/silo/compare/v0.2.1...v0.3.0) (2026-05-21)
 
 
