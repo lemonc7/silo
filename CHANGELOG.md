@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/lemonc7/silo/compare/v0.3.1...v0.3.2) (2026-05-24)
+
+
+### Bug Fixes
+
+* 增加磁力绑定剧集的功能 ([f29333a](https://github.com/lemonc7/silo/commit/f29333a815f01cb53250158225bdd8747026cd21))
+* 调整磁力绑定剧集功能，新增整季链接绑定对应集数 ([950c2e2](https://github.com/lemonc7/silo/commit/950c2e27ad5f11c58f2c089067be18211ef98096))
+
 ## [0.3.1](https://github.com/lemonc7/silo/compare/v0.3.0...v0.3.1) (2026-05-23)
 
 
