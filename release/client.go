@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -442,11 +443,12 @@ func (c *BTClient) getTorrents(ctx context.Context, rows rod.Elements, profile s
 			seeder, _ := strconv.Atoi(seederStr)
 
 			ts = append(ts, Torrent{
-				Title:   title,
-				Magnet:  *href,
-				Size:    parseSizeMB(size),
-				Seeder:  int64(seeder),
-				Profile: profile,
+				Title:    title,
+				Magnet:   *href,
+				Size:     parseSizeMB(size),
+				Seeder:   int64(seeder),
+				Profile:  profile,
+				Episodes: []int64{math.MaxInt64},
 			})
 		} else if strings.HasPrefix(*href, "/bt") {
 			detailPage, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL + *href})
@@ -502,7 +504,7 @@ func (c *BTClient) getTorrents(ctx context.Context, rows rod.Elements, profile s
 					Title:    title,
 					Magnet:   *magnet,
 					Size:     parseSizeMB(sizeStr),
-					Seeder:   0,
+					Seeder:   -1,
 					Profile:  profile,
 					Episodes: episodes,
 				})

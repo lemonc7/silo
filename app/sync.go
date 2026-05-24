@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"time"
 
 	"github.com/lemonc7/silo/catalog"
@@ -252,13 +253,25 @@ func (s *Service) SyncSeriesMagnets(ctx context.Context) error {
 				_ = tx.Rollback()
 				return fmt.Errorf("插入磁力链接: %w", err)
 			}
-			for _, ep := range t.Episodes {
-				if _, err := qtx.UpsertMagnetEpisode(ctx, repo.UpsertMagnetEpisodeParams{
-					MagnetID:  id,
-					EpisodeID: ep,
+			// 对应整季资源
+			if len(t.Episodes) == 1 && t.Episodes[0] == math.MaxInt64 {
+				if _, err := qtx.UpsertMagnetEpisodeBySeasonID(ctx, repo.UpsertMagnetEpisodeBySeasonIDParams{
+					MagnetID: id,
+					SeasonID: item.SeasonID,
 				}); err != nil {
 					_ = tx.Rollback()
-					return fmt.Errorf("绑定磁力链接与对应集: %w", err)
+					return fmt.Errorf("绑定整季磁力链接到对应集: %w", err)
+				}
+			} else {
+				for _, ep := range t.Episodes {
+					if _, err := qtx.UpsertMagnetEpisodeByEpisodeNumber(ctx, repo.UpsertMagnetEpisodeByEpisodeNumberParams{
+						MagnetID:      id,
+						SeasonID:      item.SeasonID,
+						EpisodeNumber: ep,
+					}); err != nil {
+						_ = tx.Rollback()
+						return fmt.Errorf("绑定磁力链接到对应集: %w", err)
+					}
 				}
 			}
 		}

@@ -88,7 +88,7 @@ WHERE
 SELECT
   s.id AS season_id,
   s.series_id AS media_id,
-  s.season_number,
+  s.episode_count,
   p.detail_path
 FROM seasons s
 JOIN medias m ON m.id = s.series_id
@@ -146,13 +146,29 @@ ON CONFLICT(magnet_url) DO UPDATE SET
   profile = excluded.profile
 RETURNING id;
 
--- name: UpsertMagnetEpisode :execrows
-INSERT INTO magnet_episodes (magnet_id, episode_id)
-VALUES (?1, ?2)
-ON CONFLICT(magnet_id, episode_id) DO NOTHING;
-
 -- name: UpsertProfilePriority :execrows
 INSERT INTO profile_priorities (profile, priority)
 VALUES (?1, ?2)
 ON CONFLICT(profile) DO UPDATE SET
   priority = excluded.priority;
+
+-- name: UpsertMagnetEpisodeByEpisodeNumber :execrows
+INSERT INTO magnet_episodes (magnet_id, episode_id)
+SELECT
+  ?1,
+  e.id
+FROM episodes e
+WHERE
+  e.season_id = ?2
+  AND e.episode_number = ?3
+ON CONFLICT(magnet_id, episode_id) DO NOTHING;
+
+-- name: UpsertMagnetEpisodeBySeasonID :execrows
+INSERT INTO magnet_episodes (magnet_id, episode_id)
+SELECT
+  ?1,
+  e.id
+FROM episodes e
+WHERE
+  e.season_id = ?2
+ON CONFLICT(magnet_id, episode_id) DO NOTHING;

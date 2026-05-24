@@ -211,7 +211,7 @@ const getSeasonPages = `-- name: GetSeasonPages :many
 SELECT
   s.id AS season_id,
   s.series_id AS media_id,
-  s.season_number,
+  s.episode_count,
   p.detail_path
 FROM seasons s
 JOIN medias m ON m.id = s.series_id
@@ -227,7 +227,7 @@ WHERE
 type GetSeasonPagesRow struct {
 	SeasonID     int64  `json:"season_id"`
 	MediaID      int64  `json:"media_id"`
-	SeasonNumber int64  `json:"season_number"`
+	EpisodeCount int64  `json:"episode_count"`
 	DetailPath   string `json:"detail_path"`
 }
 
@@ -243,7 +243,7 @@ func (q *Queries) GetSeasonPages(ctx context.Context, provider string) ([]GetSea
 		if err := rows.Scan(
 			&i.SeasonID,
 			&i.MediaID,
-			&i.SeasonNumber,
+			&i.EpisodeCount,
 			&i.DetailPath,
 		); err != nil {
 			return nil, err
@@ -339,19 +339,50 @@ func (q *Queries) UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (i
 	return result.RowsAffected()
 }
 
-const upsertMagnetEpisode = `-- name: UpsertMagnetEpisode :execrows
+const upsertMagnetEpisodeByEpisodeNumber = `-- name: UpsertMagnetEpisodeByEpisodeNumber :execrows
 INSERT INTO magnet_episodes (magnet_id, episode_id)
-VALUES (?1, ?2)
+SELECT
+  ?1,
+  e.id
+FROM episodes e
+WHERE
+  e.season_id = ?2
+  AND e.episode_number = ?3
 ON CONFLICT(magnet_id, episode_id) DO NOTHING
 `
 
-type UpsertMagnetEpisodeParams struct {
-	MagnetID  int64 `json:"magnet_id"`
-	EpisodeID int64 `json:"episode_id"`
+type UpsertMagnetEpisodeByEpisodeNumberParams struct {
+	MagnetID      int64 `json:"magnet_id"`
+	SeasonID      int64 `json:"season_id"`
+	EpisodeNumber int64 `json:"episode_number"`
 }
 
-func (q *Queries) UpsertMagnetEpisode(ctx context.Context, arg UpsertMagnetEpisodeParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, upsertMagnetEpisode, arg.MagnetID, arg.EpisodeID)
+func (q *Queries) UpsertMagnetEpisodeByEpisodeNumber(ctx context.Context, arg UpsertMagnetEpisodeByEpisodeNumberParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertMagnetEpisodeByEpisodeNumber, arg.MagnetID, arg.SeasonID, arg.EpisodeNumber)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertMagnetEpisodeBySeasonID = `-- name: UpsertMagnetEpisodeBySeasonID :execrows
+INSERT INTO magnet_episodes (magnet_id, episode_id)
+SELECT
+  ?1,
+  e.id
+FROM episodes e
+WHERE
+  e.season_id = ?2
+ON CONFLICT(magnet_id, episode_id) DO NOTHING
+`
+
+type UpsertMagnetEpisodeBySeasonIDParams struct {
+	MagnetID int64 `json:"magnet_id"`
+	SeasonID int64 `json:"season_id"`
+}
+
+func (q *Queries) UpsertMagnetEpisodeBySeasonID(ctx context.Context, arg UpsertMagnetEpisodeBySeasonIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertMagnetEpisodeBySeasonID, arg.MagnetID, arg.SeasonID)
 	if err != nil {
 		return 0, err
 	}
