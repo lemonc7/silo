@@ -48,34 +48,26 @@ CREATE TABLE IF NOT EXISTS magnets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
     season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
-    episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     magnet_url TEXT NOT NULL UNIQUE,
     size_mb REAL NOT NULL DEFAULT 0,
     seeder INTEGER NOT NULL DEFAULT 0,
     profile TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'available'
-      CHECK(status IN ('available', 'rejected')),
-    CHECK(
-      (season_id IS NULL AND episode_id IS NULL)
-      OR (season_id IS NOT NULL AND episode_id IS NULL)
-      OR (season_id IS NOT NULL AND episode_id IS NOT NULL)
-    )
+      CHECK(status IN ('available', 'rejected'))
+);
+
+CREATE TABLE IF NOT EXISTS magnet_episodes (
+    magnet_id INTEGER NOT NULL REFERENCES magnets(id) ON DELETE CASCADE,
+    episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+    PRIMARY KEY(magnet_id, episode_id)
 );
 
 CREATE TABLE IF NOT EXISTS downloads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    media_id INTEGER NOT NULL REFERENCES medias(id) ON DELETE CASCADE,
-    season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
-    episode_id INTEGER REFERENCES episodes(id) ON DELETE CASCADE,
     magnet_id INTEGER NOT NULL REFERENCES magnets(id) ON DELETE CASCADE,
     qb_hash TEXT UNIQUE,
-    status TEXT NOT NULL DEFAULT 'queued'
-      CHECK(status IN ('queued', 'downloading', 'completed', 'failed')),
     error TEXT,
-    CHECK(
-      (season_id IS NULL AND episode_id IS NULL)
-      OR (season_id IS NOT NULL AND episode_id IS NULL)
-      OR (season_id IS NOT NULL AND episode_id IS NOT NULL)
-    )
+    status TEXT NOT NULL DEFAULT 'queued'
+      CHECK(status IN ('queued', 'downloading', 'completed', 'failed'))
 );

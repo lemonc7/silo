@@ -9,14 +9,11 @@ import (
 )
 
 type Download struct {
-	ID        int64   `json:"id"`
-	MediaID   int64   `json:"media_id"`
-	SeasonID  *int64  `json:"season_id"`
-	EpisodeID *int64  `json:"episode_id"`
-	MagnetID  int64   `json:"magnet_id"`
-	QbHash    *string `json:"qb_hash"`
-	Status    string  `json:"status"`
-	Error     *string `json:"error"`
+	ID       int64   `json:"id"`
+	MagnetID int64   `json:"magnet_id"`
+	QbHash   *string `json:"qb_hash"`
+	Error    *string `json:"error"`
+	Status   string  `json:"status"`
 }
 
 type Episode struct {
@@ -31,13 +28,17 @@ type Magnet struct {
 	ID        int64   `json:"id"`
 	MediaID   int64   `json:"media_id"`
 	SeasonID  *int64  `json:"season_id"`
-	EpisodeID *int64  `json:"episode_id"`
 	Title     string  `json:"title"`
 	MagnetUrl string  `json:"magnet_url"`
 	SizeMb    float64 `json:"size_mb"`
 	Seeder    int64   `json:"seeder"`
 	Profile   string  `json:"profile"`
 	Status    string  `json:"status"`
+}
+
+type MagnetEpisode struct {
+	MagnetID  int64 `json:"magnet_id"`
+	EpisodeID int64 `json:"episode_id"`
 }
 
 type Media struct {

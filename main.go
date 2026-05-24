@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/lemonc7/silo/app"
@@ -10,7 +9,6 @@ import (
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
 	"github.com/lemonc7/silo/release"
-	"github.com/lemonc7/silo/repo"
 )
 
 func main() {
@@ -34,22 +32,15 @@ func main() {
 		panic(err)
 	}
 
-	rp := repo.New(db)
-	for i, p := range cfg.Resource.Profiles {
-		if _, err := rp.UpsertProfilePriority(ctx, repo.UpsertProfilePriorityParams{
-			Profile:  p,
-			Priority: int64(i),
-		}); err != nil {
-			log.Printf("[db] 插入磁力优先级标签失败: %v", err)
-			continue
-		}
-	}
-
 	srv := app.NewService(
-		rp,
+		db,
 		catalog.NewHTTPClient(cfg.TMDB),
 		rl,
 	)
+
+	if err := srv.InitProfilePriority(ctx, cfg.Resource.Profiles); err != nil {
+		panic(err)
+	}
 
 	if err := srv.SyncMedia(ctx); err != nil {
 		panic(err)
@@ -68,6 +59,9 @@ func main() {
 	}
 
 	if err := srv.SyncMovieMagnets(ctx); err != nil {
+		panic(err)
+	}
+	if err := srv.SyncSeriesMagnets(ctx); err != nil {
 		panic(err)
 	}
 }

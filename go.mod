@@ -6,6 +6,7 @@ require (
 	github.com/go-rod/rod v0.116.2
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/ilyakaznacheev/cleanenv v1.5.0
+	github.com/lemonc7/episodex v0.2.0
 	modernc.org/sqlite v1.50.1
 )
 

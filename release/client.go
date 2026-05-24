@@ -17,6 +17,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
+	"github.com/lemonc7/episodex"
 	"github.com/lemonc7/silo/catalog"
 	"github.com/lemonc7/silo/config"
 )
@@ -131,8 +132,8 @@ func (c *BTClient) Resolve(ctx context.Context, item Media) (string, error) {
 	return result, nil
 }
 
-func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent, error) {
-	url := c.cfg.URL + item.Target
+func (c *BTClient) FetchReleases(ctx context.Context, target string) ([]Torrent, error) {
+	url := c.cfg.URL + target
 	page, err := c.browser.Page(proto.TargetCreateTarget{URL: url})
 	if err != nil {
 		return nil, fmt.Errorf("打开资源详情页: %w", err)
@@ -183,7 +184,7 @@ func (c *BTClient) FetchReleases(ctx context.Context, item Resource) ([]Torrent,
 			return nil, fmt.Errorf("读取资源列表: %w", err)
 		}
 
-		ts, err := getTorrents(rows, profile)
+		ts, err := c.getTorrents(ctx, rows, profile)
 		if err != nil {
 			return nil, fmt.Errorf("获取磁力链接: %w", err)
 		}
@@ -392,7 +393,7 @@ func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
 	return false
 }
 
-func getTorrents(rows rod.Elements, profile string) ([]Torrent, error) {
+func (c *BTClient) getTorrents(ctx context.Context, rows rod.Elements, profile string) ([]Torrent, error) {
 	var ts []Torrent
 	for _, row := range rows {
 		visible, err := row.Visible()
@@ -403,55 +404,119 @@ func getTorrents(rows rod.Elements, profile string) ([]Torrent, error) {
 			continue
 		}
 
-		nameEl, err := row.Element(`a.svg-tf[href^="magnet:"]`)
+		nameEl, err := row.Element("a.svg-tf")
 		if err != nil {
 			return nil, fmt.Errorf("名称列: %w", err)
-		}
-		title, err := nameEl.Text()
-		if err != nil {
-			return nil, fmt.Errorf("获取标题: %w", err)
 		}
 		href, err := nameEl.Attribute("href")
 		if err != nil {
 			return nil, fmt.Errorf("读取磁力链接: %w", err)
 		}
-		var magnet string
-		if href != nil {
-			magnet = *href
+		if href == nil {
+			return nil, fmt.Errorf("获取资源href: %w", err)
 		}
 
-		sizeEl, err := row.Element("td:nth-child(3)")
-		if err != nil {
-			return nil, fmt.Errorf("大小列: %w", err)
-		}
-		size, err := sizeEl.Text()
-		if err != nil {
-			return nil, fmt.Errorf("获取资源大小: %w", err)
+		if strings.HasPrefix(*href, "magnet:") {
+			title, err := nameEl.Text()
+			if err != nil {
+				return nil, fmt.Errorf("获取标题: %w", err)
+			}
+
+			sizeEl, err := row.Element("td:nth-child(3)")
+			if err != nil {
+				return nil, fmt.Errorf("大小列: %w", err)
+			}
+			size, err := sizeEl.Text()
+			if err != nil {
+				return nil, fmt.Errorf("获取资源大小: %w", err)
+			}
+
+			seederEl, err := row.Element("td:nth-child(4) > i")
+			if err != nil {
+				return nil, fmt.Errorf("做种列: %w", err)
+			}
+			seederStr, err := seederEl.Text()
+			if err != nil {
+				return nil, fmt.Errorf("获取做种数: %w", err)
+			}
+			seeder, _ := strconv.Atoi(seederStr)
+
+			ts = append(ts, Torrent{
+				Title:   title,
+				Magnet:  *href,
+				Size:    parseSizeMB(size),
+				Seeder:  int64(seeder),
+				Profile: profile,
+			})
+		} else if strings.HasPrefix(*href, "/bt") {
+			detailPage, err := c.browser.Page(proto.TargetCreateTarget{URL: c.cfg.URL + *href})
+			if err != nil {
+				return nil, fmt.Errorf("打开种子详情页: %w", err)
+			}
+			defer detailPage.Close()
+			detailPage = detailPage.Context(ctx)
+
+			list, err := detailPage.Element("ul.down321")
+			if err != nil {
+				return nil, fmt.Errorf("种子列表: %w", err)
+			}
+			lis, err := list.Elements("li")
+			for _, li := range lis {
+				titleEl, err := li.Element("div:nth-child(1)")
+				if err != nil {
+					return nil, fmt.Errorf("种子标题列: %w", err)
+				}
+				title, err := titleEl.Text()
+				if err != nil {
+					return nil, fmt.Errorf("获取标题: %w", err)
+				}
+
+				magnetEl, err := li.Element(`a[href^="magnet:"]`)
+				if err != nil {
+					return nil, fmt.Errorf("磁力链接: %w", err)
+				}
+				magnet, err := magnetEl.Attribute("href")
+				if err != nil {
+					return nil, fmt.Errorf("获取磁力链接: %w", err)
+				}
+
+				sizeEl, err := li.Element("div.left")
+				if err != nil {
+					return nil, fmt.Errorf("种子大小: %w", err)
+				}
+				sizeStr, err := sizeEl.Text()
+				if err != nil {
+					return nil, fmt.Errorf("获取种子大小: %w", err)
+				}
+
+				ep := episodex.ExtractEpisodeInfo(title)
+				var episodes []int64
+				if ep.Start != nil && ep.End != nil {
+					for i := ep.Start.Major; i <= ep.End.Major; i++ {
+						episodes = append(episodes, int64(i))
+					}
+				} else if ep.Episode != nil {
+					episodes = append(episodes, int64(ep.Episode.Major))
+				}
+				ts = append(ts, Torrent{
+					Title:    title,
+					Magnet:   *magnet,
+					Size:     parseSizeMB(sizeStr),
+					Seeder:   0,
+					Profile:  profile,
+					Episodes: episodes,
+				})
+			}
+		} else {
+			log.Printf("[bt] 无效的href类型: %s\n", *href)
 		}
 
-		seederEl, err := row.Element("td:nth-child(4) > i")
-		if err != nil {
-			return nil, fmt.Errorf("做种列: %w", err)
-		}
-		seederStr, err := seederEl.Text()
-		if err != nil {
-			return nil, fmt.Errorf("获取做种数: %w", err)
-		}
-		seeder, _ := strconv.Atoi(seederStr)
-
-		ts = append(ts, Torrent{
-			Title:   title,
-			Magnet:  magnet,
-			Size:    parseSizeMB(size),
-			Seeder:  int64(seeder),
-			Profile: profile,
-		})
 	}
 
 	return ts, nil
 }
 
-var sizeRe = regexp.MustCompile(`(?i)^\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?b)\s*$`)
+var sizeRe = regexp.MustCompile(`(?i)([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?b)`)
 
 func parseSizeMB(raw string) float64 {
 	matches := sizeRe.FindStringSubmatch(strings.TrimSpace(raw))

@@ -1,4 +1,5 @@
 DROP TABLE IF EXISTS downloads;
+DROP TABLE IF EXISTS magnet_episodes;
 DROP TABLE IF EXISTS magnets;
 DROP TABLE IF EXISTS pages;
 DROP TABLE IF EXISTS profile_priorities;

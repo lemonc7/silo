@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"time"
@@ -12,13 +13,40 @@ import (
 )
 
 type Service struct {
-	repo    repo.Querier
+	db      *sql.DB
+	repo    *repo.Queries
 	catalog catalog.Provider
 	release release.Provider
 }
 
-func NewService(repo repo.Querier, catalog catalog.Provider, release release.Provider) *Service {
-	return &Service{repo: repo, catalog: catalog, release: release}
+func NewService(db *sql.DB, catalog catalog.Provider, release release.Provider) *Service {
+	return &Service{
+		db:      db,
+		repo:    repo.New(db),
+		catalog: catalog,
+		release: release,
+	}
+}
+
+func (s *Service) InitProfilePriority(ctx context.Context, profiles []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("打开事务: %w", err)
+	}
+	defer tx.Rollback()
+	qtx := s.repo.WithTx(tx)
+	for i, p := range profiles {
+		if _, err := qtx.UpsertProfilePriority(ctx, repo.UpsertProfilePriorityParams{
+			Profile:  p,
+			Priority: int64(i),
+		}); err != nil {
+			return fmt.Errorf("插入profile优先级: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) SyncMedia(ctx context.Context) error {
@@ -168,11 +196,7 @@ func (s *Service) SyncMovieMagnets(ctx context.Context) error {
 		return fmt.Errorf("获取电影详情页链接: %w", err)
 	}
 	for _, item := range items {
-		ts, err := s.release.FetchReleases(ctx, release.Resource{
-			Target:   item.DetailPath,
-			Type:     catalog.MediaTypeMovie,
-			SeasonID: nil,
-		})
+		ts, err := s.release.FetchReleases(ctx, item.DetailPath)
 		if err != nil {
 			log.Printf("[release] 获取磁力链接失败: %v", err)
 			continue
@@ -180,7 +204,7 @@ func (s *Service) SyncMovieMagnets(ctx context.Context) error {
 
 		for _, t := range ts {
 			if _, err := s.repo.UpsertMagnets(ctx, repo.UpsertMagnetsParams{
-				MediaID:   item.ID,
+				MediaID:   item.MediaID,
 				Title:     t.Title,
 				MagnetUrl: t.Magnet,
 				SizeMb:    t.Size,
@@ -190,6 +214,57 @@ func (s *Service) SyncMovieMagnets(ctx context.Context) error {
 				log.Printf("[db] 插入电影磁力链接失败: %v", err)
 				continue
 			}
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) SyncSeriesMagnets(ctx context.Context) error {
+	items, err := s.repo.GetSeasonPages(ctx, "bt")
+	if err != nil {
+		return fmt.Errorf("获取剧集详情页链接: %w", err)
+	}
+
+	for _, item := range items {
+		ts, err := s.release.FetchReleases(ctx, item.DetailPath)
+		if err != nil {
+			log.Printf("[release] 获取磁力链接失败: %v", err)
+			continue
+		}
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("开启事务: %w", err)
+		}
+		qtx := s.repo.WithTx(tx)
+
+		for _, t := range ts {
+			id, err := qtx.UpsertMagnets(ctx, repo.UpsertMagnetsParams{
+				MediaID:   item.MediaID,
+				SeasonID:  &item.SeasonID,
+				Title:     t.Title,
+				MagnetUrl: t.Magnet,
+				SizeMb:    t.Size,
+				Seeder:    t.Seeder,
+				Profile:   t.Profile,
+			})
+			if err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("插入磁力链接: %w", err)
+			}
+			for _, ep := range t.Episodes {
+				if _, err := qtx.UpsertMagnetEpisode(ctx, repo.UpsertMagnetEpisodeParams{
+					MagnetID:  id,
+					EpisodeID: ep,
+				}); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf("绑定磁力链接与对应集: %w", err)
+				}
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			_ = tx.Rollback()
+			log.Printf("[db] 更新剧集磁力链接失败，回退: %v", err)
 		}
 	}
 

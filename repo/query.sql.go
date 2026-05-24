@@ -13,7 +13,6 @@ import (
 const getBestMagnetOfMovie = `-- name: GetBestMagnetOfMovie :one
 SELECT
   m.id,
-  m.media_id,
   m.magnet_url
 FROM magnets m
 LEFT JOIN profile_priorities pp
@@ -23,7 +22,6 @@ WHERE
   AND m.size_mb >= ?2
   AND m.size_mb <= ?3
   AND m.season_id IS NULL
-  AND m.episode_id IS NULL
   AND m.status = 'available'
 ORDER BY
   pp.priority IS NULL,
@@ -41,23 +39,22 @@ type GetBestMagnetOfMovieParams struct {
 
 type GetBestMagnetOfMovieRow struct {
 	ID        int64  `json:"id"`
-	MediaID   int64  `json:"media_id"`
 	MagnetUrl string `json:"magnet_url"`
 }
 
 func (q *Queries) GetBestMagnetOfMovie(ctx context.Context, arg GetBestMagnetOfMovieParams) (GetBestMagnetOfMovieRow, error) {
 	row := q.db.QueryRowContext(ctx, getBestMagnetOfMovie, arg.MediaID, arg.MinSizeMb, arg.MaxSizeMb)
 	var i GetBestMagnetOfMovieRow
-	err := row.Scan(&i.ID, &i.MediaID, &i.MagnetUrl)
+	err := row.Scan(&i.ID, &i.MagnetUrl)
 	return i, err
 }
 
 const getMoviePages = `-- name: GetMoviePages :many
 SELECT 
-  m.id,
+  m.id AS media_id,
   p.detail_path
-FROM pages p
-JOIN medias m ON m.id = p.media_id
+FROM medias m
+JOIN pages p ON p.media_id = m.id
 WHERE
   m.type = 'movie'
   AND m.status IN ('wanted', 'monitoring')
@@ -66,7 +63,7 @@ WHERE
 `
 
 type GetMoviePagesRow struct {
-	ID         int64  `json:"id"`
+	MediaID    int64  `json:"media_id"`
 	DetailPath string `json:"detail_path"`
 }
 
@@ -79,7 +76,7 @@ func (q *Queries) GetMoviePages(ctx context.Context, provider string) ([]GetMovi
 	var items []GetMoviePagesRow
 	for rows.Next() {
 		var i GetMoviePagesRow
-		if err := rows.Scan(&i.ID, &i.DetailPath); err != nil {
+		if err := rows.Scan(&i.MediaID, &i.DetailPath); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -210,6 +207,58 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 	return items, nil
 }
 
+const getSeasonPages = `-- name: GetSeasonPages :many
+SELECT
+  s.id AS season_id,
+  s.series_id AS media_id,
+  s.season_number,
+  p.detail_path
+FROM seasons s
+JOIN medias m ON m.id = s.series_id
+JOIN pages p
+  ON p.media_id = s.series_id
+  AND p.season_id = s.id
+WHERE
+  m.type IN ('tv', 'anime')
+  AND m.status IN ('wanted', 'monitoring')
+  AND p.provider = ?1
+`
+
+type GetSeasonPagesRow struct {
+	SeasonID     int64  `json:"season_id"`
+	MediaID      int64  `json:"media_id"`
+	SeasonNumber int64  `json:"season_number"`
+	DetailPath   string `json:"detail_path"`
+}
+
+func (q *Queries) GetSeasonPages(ctx context.Context, provider string) ([]GetSeasonPagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getSeasonPages, provider)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSeasonPagesRow
+	for rows.Next() {
+		var i GetSeasonPagesRow
+		if err := rows.Scan(
+			&i.SeasonID,
+			&i.MediaID,
+			&i.SeasonNumber,
+			&i.DetailPath,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSeasonsWithoutPage = `-- name: GetSeasonsWithoutPage :many
 SELECT 
   s.id AS season_id,
@@ -290,11 +339,29 @@ func (q *Queries) UpsertEpisode(ctx context.Context, arg UpsertEpisodeParams) (i
 	return result.RowsAffected()
 }
 
-const upsertMagnets = `-- name: UpsertMagnets :execrows
+const upsertMagnetEpisode = `-- name: UpsertMagnetEpisode :execrows
+INSERT INTO magnet_episodes (magnet_id, episode_id)
+VALUES (?1, ?2)
+ON CONFLICT(magnet_id, episode_id) DO NOTHING
+`
+
+type UpsertMagnetEpisodeParams struct {
+	MagnetID  int64 `json:"magnet_id"`
+	EpisodeID int64 `json:"episode_id"`
+}
+
+func (q *Queries) UpsertMagnetEpisode(ctx context.Context, arg UpsertMagnetEpisodeParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, upsertMagnetEpisode, arg.MagnetID, arg.EpisodeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertMagnets = `-- name: UpsertMagnets :one
 INSERT INTO magnets (
   media_id, 
   season_id, 
-  episode_id, 
   title, 
   magnet_url,
   size_mb,
@@ -307,15 +374,19 @@ INSERT INTO magnets (
   ?4,
   ?5,
   ?6,
-  ?7,
-  ?8
-) ON CONFLICT(magnet_url) DO NOTHING
+  ?7
+)
+ON CONFLICT(magnet_url) DO UPDATE SET
+  title = excluded.title,
+  size_mb = excluded.size_mb,
+  seeder = excluded.seeder,
+  profile = excluded.profile
+RETURNING id
 `
 
 type UpsertMagnetsParams struct {
 	MediaID   int64   `json:"media_id"`
 	SeasonID  *int64  `json:"season_id"`
-	EpisodeID *int64  `json:"episode_id"`
 	Title     string  `json:"title"`
 	MagnetUrl string  `json:"magnet_url"`
 	SizeMb    float64 `json:"size_mb"`
@@ -324,20 +395,18 @@ type UpsertMagnetsParams struct {
 }
 
 func (q *Queries) UpsertMagnets(ctx context.Context, arg UpsertMagnetsParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, upsertMagnets,
+	row := q.db.QueryRowContext(ctx, upsertMagnets,
 		arg.MediaID,
 		arg.SeasonID,
-		arg.EpisodeID,
 		arg.Title,
 		arg.MagnetUrl,
 		arg.SizeMb,
 		arg.Seeder,
 		arg.Profile,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const upsertMedia = `-- name: UpsertMedia :execrows
