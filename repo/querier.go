@@ -11,6 +11,8 @@ import (
 type Querier interface {
 	CreateDownload(ctx context.Context, magnetID int64) (int64, error)
 	GetBestMagnetOfMovie(ctx context.Context, arg GetBestMagnetOfMovieParams) (GetBestMagnetOfMovieRow, error)
+	GetEpisodes(ctx context.Context, seasonID int64) ([]Episode, error)
+	GetMedias(ctx context.Context) ([]Media, error)
 	GetMoviePages(ctx context.Context, provider string) ([]GetMoviePagesRow, error)
 	GetMoviesWithoutPage(ctx context.Context, provider string) ([]GetMoviesWithoutPageRow, error)
 	GetOutOfSyncSeasons(ctx context.Context) ([]GetOutOfSyncSeasonsRow, error)
@@ -20,6 +22,7 @@ type Querier interface {
 	GetSeasonDownloadStats(ctx context.Context) ([]GetSeasonDownloadStatsRow, error)
 	GetSeasonMagnetCandidates(ctx context.Context, seasonID *int64) ([]GetSeasonMagnetCandidatesRow, error)
 	GetSeasonPages(ctx context.Context, provider string) ([]GetSeasonPagesRow, error)
+	GetSeasons(ctx context.Context, seriesID int64) ([]Season, error)
 	GetSeasonsWithoutPage(ctx context.Context, provider string) ([]GetSeasonsWithoutPageRow, error)
 	MarkDownloadCompleted(ctx context.Context, id int64) (int64, error)
 	MarkDownloadFailed(ctx context.Context, arg MarkDownloadFailedParams) (int64, error)

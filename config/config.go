@@ -13,6 +13,7 @@ type Config struct {
 	Resource   ResourceConfig   `yaml:"resource"`
 	Downloader DownloaderConfig `yaml:"downloader"`
 	Log        LogConfig        `yaml:"log"`
+	Server     ServerConfig     `yaml:"server"`
 }
 
 type TMDBConfig struct {
@@ -61,6 +62,12 @@ type LogConfig struct {
 	Level  string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
 	Format string `yaml:"format" env:"LOG_FORMAT" env-default:"text"`
 	TZ     string `yaml:"tz" env:"LOG_TZ" env-default:"Asia/Shanghai"`
+}
+
+type ServerConfig struct {
+	Port         int           `yaml:"port" env:"SERVER_PORT" env-default:"8080"`
+	ReadTimeout  time.Duration `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT" env-default:"30s"`
+	WriteTimeout time.Duration `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT" env-default:"30s"`
 }
 
 func LoadConfig(path string) (*Config, error) {

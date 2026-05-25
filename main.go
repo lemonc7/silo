@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lemonc7/silo/app"
 	"github.com/lemonc7/silo/catalog"
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
 	"github.com/lemonc7/silo/download"
 	"github.com/lemonc7/silo/release"
+	"github.com/lemonc7/silo/service"
 )
 
 func main() {
@@ -48,7 +48,7 @@ func main() {
 		panic(err)
 	}
 
-	srv := app.NewService(
+	srv := service.NewService(
 		db,
 		catalog.NewHTTPClient(cfg.TMDB),
 		rl,
