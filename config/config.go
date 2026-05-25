@@ -8,15 +8,11 @@ import (
 )
 
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
 	TMDB       TMDBConfig       `yaml:"tmdb"`
 	Database   DatabaseConfig   `yaml:"database"`
 	Resource   ResourceConfig   `yaml:"resource"`
 	Downloader DownloaderConfig `yaml:"downloader"`
-}
-
-type ServerConfig struct {
-	TZ string `yaml:"tz" env:"TZ" env-default:"Asia/Shanghai"`
+	Log        LogConfig        `yaml:"log"`
 }
 
 type TMDBConfig struct {
@@ -59,6 +55,12 @@ type DownloaderConfig struct {
 	Port     int    `yaml:"port" env:"QB_PORT"`
 	Username string `yaml:"username" env:"QB_USERNAME"`
 	Password string `yaml:"password" env:"QB_PASSWORD"`
+}
+
+type LogConfig struct {
+	Level  string `yaml:"level" env:"LOG_LEVEL" env-default:"info"`
+	Format string `yaml:"format" env:"LOG_FORMAT" env-default:"text"`
+	TZ     string `yaml:"tz" env:"LOG_TZ" env-default:"Asia/Shanghai"`
 }
 
 func LoadConfig(path string) (*Config, error) {

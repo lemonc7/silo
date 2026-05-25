@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"time"
 
@@ -32,28 +32,27 @@ func NewService(db *sql.DB, catalog catalog.Provider, release release.Provider) 
 func (s *Service) InitProfilePriority(ctx context.Context, profiles []string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("打开事务: %w", err)
+		return fmt.Errorf("启动事务: %w", err)
 	}
 	defer tx.Rollback()
+
 	qtx := s.repo.WithTx(tx)
 	for i, p := range profiles {
-		if _, err := qtx.UpsertProfilePriority(ctx, repo.UpsertProfilePriorityParams{
-			Profile:  p,
-			Priority: int64(i),
-		}); err != nil {
-			return fmt.Errorf("插入profile优先级: %w", err)
+		if _, err := qtx.UpsertProfilePriority(ctx, repo.UpsertProfilePriorityParams{Profile: p, Priority: int64(i)}); err != nil {
+			return fmt.Errorf("插入标签优先级: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("提交事务: %w", err)
 	}
+	slog.Info("标签优先级同步完成", "component", "sync")
 	return nil
 }
 
 func (s *Service) SyncMedia(ctx context.Context) error {
 	items, err := s.catalog.FetchMedia(ctx)
 	if err != nil {
-		return fmt.Errorf("获取媒体信息: %w", err)
+		return fmt.Errorf("获取待同步的媒体: %w", err)
 	}
 
 	for _, item := range items {
@@ -64,10 +63,11 @@ func (s *Service) SyncMedia(ctx context.Context) error {
 			AirDate:    item.AirDate,
 			PosterPath: item.PosterPath,
 		}); err != nil {
-			return fmt.Errorf("插入[%s]到数据库: %w", item.Title, err)
+			return fmt.Errorf("插入媒体(%s)到数据库: %w", item.Title, err)
 		}
 	}
 
+	slog.Info("媒体同步完成", "component", "sync")
 	return nil
 }
 
@@ -80,7 +80,7 @@ func (s *Service) SyncSeason(ctx context.Context) error {
 	for _, t := range tvs {
 		seasons, err := s.catalog.FetchSeasons(ctx, t.TmdbID)
 		if err != nil {
-			log.Printf("[catalog] 跳过剧集 %d: 获取季信息失败: %v", t.TmdbID, err)
+			slog.Warn("获取季信息失败", "component", "catalog", "tmdb_id", t.TmdbID, "err", err)
 			continue
 		}
 
@@ -93,12 +93,13 @@ func (s *Service) SyncSeason(ctx context.Context) error {
 				PosterPath:   season.PosterPath,
 			})
 			if err != nil {
-				log.Printf("[db] 跳过剧集 %d: 插入季(%d)信息失败: %v", t.TmdbID, season.SeasonNumber, err)
+				slog.Warn("写入季信息失败", "component", "db", "tmdb_id", t.TmdbID, "season_number", season.SeasonNumber, "err", err)
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 
+	slog.Info("剧集季信息同步完成", "component", "sync")
 	return nil
 }
 
@@ -111,7 +112,7 @@ func (s *Service) SyncEpisode(ctx context.Context) error {
 	for _, se := range seasons {
 		episodes, err := s.catalog.FetchEpisodes(ctx, se.TmdbID, se.SeasonNumber)
 		if err != nil {
-			log.Printf("[catalog] 跳过季 %d: 获取集信息失败: %v", se.ID, err)
+			slog.Warn("获取集信息失败", "component", "catalog", "season_id", se.ID, "tmdb_id", se.TmdbID, "err", err)
 			continue
 		}
 
@@ -121,73 +122,57 @@ func (s *Service) SyncEpisode(ctx context.Context) error {
 				EpisodeNumber: ep.EpisodeNumber,
 				AirDate:       ep.AirDate,
 			}); err != nil {
-				log.Printf("[db] 跳过集 %d: 插入数据库失败: %v", ep.EpisodeNumber, err)
+				slog.Warn("写入集信息失败", "component", "db", "season_id", se.ID, "episode_number", ep.EpisodeNumber, "err", err)
 			}
 		}
 
 		time.Sleep(200 * time.Millisecond)
 	}
+
+	slog.Info("剧集集信息同步完成", "component", "sync")
 	return nil
 }
 
 func (s *Service) SyncMoviePage(ctx context.Context) error {
 	movies, err := s.repo.GetMoviesWithoutPage(ctx, "bt")
 	if err != nil {
-		return fmt.Errorf("获取需要同步资源详情页的电影: %w", err)
+		return fmt.Errorf("获取电影信息(未同步资源详情页链接): %w", err)
 	}
 
 	for _, m := range movies {
-		result, err := s.release.Resolve(ctx, release.Media{
-			Type:  catalog.MediaTypeMovie,
-			Title: m.Title,
-			Year:  m.AirDate.Year(),
-		})
+		result, err := s.release.Resolve(ctx, release.Media{Type: catalog.MediaTypeMovie, Title: m.Title, Year: m.AirDate.Year()})
 		if err != nil {
-			log.Printf("[release] 获取电影[%s]资源链接失败: %v", m.Title, err)
+			slog.Warn("解析电影详情页失败", "component", "release", "title", m.Title, "year", m.AirDate.Year(), "err", err)
 			continue
 		}
-		_, err = s.repo.UpsertPages(ctx, repo.UpsertPagesParams{
-			Provider:   "bt",
-			MediaID:    m.ID,
-			SeasonID:   nil,
-			DetailPath: result,
-		})
-		if err != nil {
-			log.Printf("[db] 插入电影[%s]资源链接失败: %v", m.Title, err)
+		if _, err = s.repo.UpsertPages(ctx, repo.UpsertPagesParams{Provider: "bt", MediaID: m.ID, SeasonID: nil, DetailPath: result}); err != nil {
+			slog.Warn("写入电影详情页失败", "component", "db", "title", m.Title, "detail_path", result, "err", err)
 		}
 	}
 
+	slog.Info("同步电影详情页完成", "component", "sync")
 	return nil
 }
 
 func (s *Service) SyncSeriesPage(ctx context.Context) error {
 	seasons, err := s.repo.GetSeasonsWithoutPage(ctx, "bt")
 	if err != nil {
-		return fmt.Errorf("获取需要同步资源详情页的季: %w", err)
+		return fmt.Errorf("获取剧集信息(未同步资源详情页链接): %w", err)
 	}
 
 	for _, season := range seasons {
-		result, err := s.release.Resolve(ctx, release.Media{
-			Title: season.Title,
-			Type:  catalog.MediaType(season.Type),
-			Year:  season.AirDate.Year(),
-		})
-
+		result, err := s.release.Resolve(ctx, release.Media{Title: season.Title, Type: catalog.MediaType(season.Type), Year: season.AirDate.Year()})
 		if err != nil {
-			log.Printf("[release] 获取剧集[%s]资源链接失败: %v", season.Title, err)
+			slog.Warn("解析剧集详情页失败", "component", "release", "title", season.Title, "season_number", season.SeasonNumber, "err", err)
 			continue
 		}
 
-		if _, err := s.repo.UpsertPages(ctx, repo.UpsertPagesParams{
-			Provider:   "bt",
-			MediaID:    season.SeriesID,
-			SeasonID:   &season.SeasonID,
-			DetailPath: result,
-		}); err != nil {
-			log.Printf("[db] 插入剧集[%s-%d]资源链接失败: %v", season.Title, season.SeasonNumber, err)
+		if _, err := s.repo.UpsertPages(ctx, repo.UpsertPagesParams{Provider: "bt", MediaID: season.SeriesID, SeasonID: &season.SeasonID, DetailPath: result}); err != nil {
+			slog.Warn("写入剧集详情页失败", "component", "db", "title", season.Title, "season_number", season.SeasonNumber, "detail_path", result, "err", err)
 		}
 	}
 
+	slog.Info("同步剧集季详情页完成", "component", "sync")
 	return nil
 }
 
@@ -199,76 +184,54 @@ func (s *Service) SyncMovieMagnets(ctx context.Context) error {
 	for _, item := range items {
 		ts, err := s.release.FetchReleases(ctx, item.DetailPath)
 		if err != nil {
-			log.Printf("[release] 获取磁力链接失败: %v", err)
+			slog.Warn("获取电影磁力链接失败", "component", "release", "media_id", item.MediaID, "detail_path", item.DetailPath, "err", err)
 			continue
 		}
 
 		for _, t := range ts {
-			if _, err := s.repo.UpsertMagnets(ctx, repo.UpsertMagnetsParams{
-				MediaID:   item.MediaID,
-				Title:     t.Title,
-				MagnetUrl: t.Magnet,
-				SizeMb:    t.Size,
-				Seeder:    t.Seeder,
-				Profile:   t.Profile,
-			}); err != nil {
-				log.Printf("[db] 插入电影磁力链接失败: %v", err)
+			if _, err := s.repo.UpsertMagnets(ctx, repo.UpsertMagnetsParams{MediaID: item.MediaID, Title: t.Title, MagnetUrl: t.Magnet, SizeMb: t.Size, Seeder: t.Seeder, Profile: t.Profile}); err != nil {
+				slog.Warn("写入电影磁力链接失败", "component", "db", "media_id", item.MediaID, "magnet", t.Magnet, "err", err)
 				continue
 			}
 		}
 	}
 
+	slog.Info("同步电影磁力链接完成", "component", "sync")
 	return nil
 }
 
 func (s *Service) SyncSeriesMagnets(ctx context.Context) error {
 	items, err := s.repo.GetSeasonPages(ctx, "bt")
 	if err != nil {
-		return fmt.Errorf("获取剧集详情页链接: %w", err)
+		return fmt.Errorf("获取剧集季详情页链接: %w", err)
 	}
 
 	for _, item := range items {
 		ts, err := s.release.FetchReleases(ctx, item.DetailPath)
 		if err != nil {
-			log.Printf("[release] 获取磁力链接失败: %v", err)
+			slog.Warn("获取剧集季磁力链接失败", "component", "release", "media_id", item.MediaID, "season_id", item.SeasonID, "detail_path", item.DetailPath, "err", err)
 			continue
 		}
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("开启事务: %w", err)
+			return fmt.Errorf("启动事务: %w", err)
 		}
 		qtx := s.repo.WithTx(tx)
 
 		for _, t := range ts {
-			id, err := qtx.UpsertMagnets(ctx, repo.UpsertMagnetsParams{
-				MediaID:   item.MediaID,
-				SeasonID:  &item.SeasonID,
-				Title:     t.Title,
-				MagnetUrl: t.Magnet,
-				SizeMb:    t.Size,
-				Seeder:    t.Seeder,
-				Profile:   t.Profile,
-			})
+			id, err := qtx.UpsertMagnets(ctx, repo.UpsertMagnetsParams{MediaID: item.MediaID, SeasonID: &item.SeasonID, Title: t.Title, MagnetUrl: t.Magnet, SizeMb: t.Size, Seeder: t.Seeder, Profile: t.Profile})
 			if err != nil {
 				_ = tx.Rollback()
-				return fmt.Errorf("插入磁力链接: %w", err)
+				return fmt.Errorf("写入磁力链接: %w", err)
 			}
-			// 对应整季资源
 			if len(t.Episodes) == 1 && t.Episodes[0] == math.MaxInt64 {
-				if _, err := qtx.UpsertMagnetEpisodeBySeasonID(ctx, repo.UpsertMagnetEpisodeBySeasonIDParams{
-					MagnetID: id,
-					SeasonID: item.SeasonID,
-				}); err != nil {
+				if _, err := qtx.UpsertMagnetEpisodeBySeasonID(ctx, repo.UpsertMagnetEpisodeBySeasonIDParams{MagnetID: id, SeasonID: item.SeasonID}); err != nil {
 					_ = tx.Rollback()
 					return fmt.Errorf("绑定整季磁力链接到对应集: %w", err)
 				}
 			} else {
 				for _, ep := range t.Episodes {
-					if _, err := qtx.UpsertMagnetEpisodeByEpisodeNumber(ctx, repo.UpsertMagnetEpisodeByEpisodeNumberParams{
-						MagnetID:      id,
-						SeasonID:      item.SeasonID,
-						EpisodeNumber: ep,
-					}); err != nil {
+					if _, err := qtx.UpsertMagnetEpisodeByEpisodeNumber(ctx, repo.UpsertMagnetEpisodeByEpisodeNumberParams{MagnetID: id, SeasonID: item.SeasonID, EpisodeNumber: ep}); err != nil {
 						_ = tx.Rollback()
 						return fmt.Errorf("绑定磁力链接到对应集: %w", err)
 					}
@@ -277,9 +240,10 @@ func (s *Service) SyncSeriesMagnets(ctx context.Context) error {
 		}
 		if err := tx.Commit(); err != nil {
 			_ = tx.Rollback()
-			log.Printf("[db] 更新剧集磁力链接失败，回退: %v", err)
+			slog.Error("提交剧集磁力链接事务失败", "component", "sync", "media_id", item.MediaID, "season_id", item.SeasonID, "err", err)
 		}
 	}
 
+	slog.Info("同步剧集磁力链接成功", "component", "sync")
 	return nil
 }

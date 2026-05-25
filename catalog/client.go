@@ -72,14 +72,14 @@ func (c *HTTPClient) buildClient() {
 func (c *HTTPClient) FetchMedia(ctx context.Context) ([]MediaItem, error) {
 	movie, err := c.FetchMovie(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch movie: %w", err)
+		return nil, fmt.Errorf("获取电影信息: %w", err)
 	}
 
 	tv, err := c.FetchTV(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetch tv: %w", err)
+		return nil, fmt.Errorf("获取剧集信息: %w", err)
 	}
-
+	
 	return append(movie, tv...), nil
 }
 
@@ -104,7 +104,7 @@ func (c *HTTPClient) fetchWatchlist(ctx context.Context, media string) ([]MediaI
 
 		var body mediaResponse
 		if err := c.get(ctx, endpoint, params, &body); err != nil {
-			return nil, fmt.Errorf("fetch watchlist/%s page %d: %w", media, page, err)
+			return nil, fmt.Errorf("获取待看片单/%s, 第 %d 页: %w", media, page, err)
 		}
 
 		all = append(all, body.Results...)
@@ -126,7 +126,7 @@ func (c *HTTPClient) FetchSeasons(ctx context.Context, tmdbID int64) ([]Season, 
 
 	var body seasonResponse
 	if err := c.get(ctx, endpoint, params, &body); err != nil {
-		return nil, fmt.Errorf("fetch tv detail %d: %w", tmdbID, err)
+		return nil, fmt.Errorf("获取剧集(%d)季信息: %w", tmdbID, err)
 	}
 
 	// 删除特殊季S00
@@ -145,7 +145,7 @@ func (c *HTTPClient) FetchEpisodes(ctx context.Context, tmdbID, seasonNum int64)
 
 	var body episodesResponse
 	if err := c.get(ctx, endpoint, params, &body); err != nil {
-		return nil, fmt.Errorf("fetch s%02d episodes for tv %d: %w", seasonNum, tmdbID, err)
+		return nil, fmt.Errorf("获取剧集(%d)第%d季集信息: %w", tmdbID, seasonNum, err)
 	}
 
 	return body.Episodes, nil
@@ -159,14 +159,14 @@ func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return fmt.Errorf("create tmdb request: %w", err)
+		return fmt.Errorf("创建请求: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send tmdb request: %w", err)
+		return fmt.Errorf("发送请求: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -175,7 +175,7 @@ func (c *HTTPClient) get(ctx context.Context, endpoint string, params url.Values
 			StatusMessage string `json:"status_message"`
 		}
 		json.NewDecoder(resp.Body).Decode(&errResp)
-		return fmt.Errorf("tmdb api %d: %s", resp.StatusCode, errResp.StatusMessage)
+		return fmt.Errorf("响应 %d: %s", resp.StatusCode, errResp.StatusMessage)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(target)

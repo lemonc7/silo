@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,12 +22,12 @@ func NewDB(path string, cfg config.DatabaseConfig) (*sql.DB, error) {
 	// 自动创建父目录
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return nil, fmt.Errorf("create db dir: %w", err)
+		return nil, fmt.Errorf("创建db父目录: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", cfg.DSN(path))
 	if err != nil {
-		return nil, fmt.Errorf("open db: %w", err)
+		return nil, fmt.Errorf("打开数据库文件: %w", err)
 	}
 
 	needClose := true
@@ -41,17 +42,17 @@ func NewDB(path string, cfg config.DatabaseConfig) (*sql.DB, error) {
 	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("ping db: %w", err)
+		return nil, fmt.Errorf("ping数据库: %w", err)
 	}
 
 	sourceDriver, err := iofs.New(migrationFS, "migrate")
 	if err != nil {
-		return nil, fmt.Errorf("create iofs driver: %w", err)
+		return nil, fmt.Errorf("创建iofs驱动: %w", err)
 	}
 
 	dbDriver, err := sqlite.WithInstance(db, &sqlite.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("create db driver: %w", err)
+		return nil, fmt.Errorf("创建db驱动: %w", err)
 	}
 
 	m, err := migrate.NewWithInstance(
@@ -61,15 +62,17 @@ func NewDB(path string, cfg config.DatabaseConfig) (*sql.DB, error) {
 		dbDriver,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create migration instance: %w", err)
+		return nil, fmt.Errorf("创建schema迁移实例: %w", err)
 	}
 
-	switch err := m.Up(); err {
-	case nil, migrate.ErrNoChange:
-	case migrate.ErrLocked:
-		return nil, fmt.Errorf("database migration locked by another process")
-	default:
-		return nil, fmt.Errorf("migrate schema: %w", err)
+	if err := m.Up(); err != nil {
+		switch {
+		case errors.Is(err, migrate.ErrNoChange):
+		case errors.Is(err, migrate.ErrLocked):
+			return nil, fmt.Errorf("数据库迁移被其他进程锁定: %w", err)
+		default:
+			return nil, fmt.Errorf("迁移数据库: %w", err)
+		}
 	}
 
 	needClose = false

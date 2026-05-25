@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/lemonc7/silo/app"
@@ -15,6 +18,14 @@ func main() {
 	cfg, err := config.LoadConfig("./config/config.yml")
 	if err != nil {
 		panic(err)
+	}
+
+	logger := newLogger(cfg.Log)
+	slog.SetDefault(logger)
+	if loc, err := time.LoadLocation(cfg.Log.TZ); err == nil {
+		time.Local = loc
+	} else {
+		logger.Warn("加载时区失败, 使用默认值", "tz", cfg.Log.TZ, "err", err)
 	}
 
 	db, err := database.NewDB("./data/data.db", cfg.Database)
@@ -64,4 +75,22 @@ func main() {
 	if err := srv.SyncSeriesMagnets(ctx); err != nil {
 		panic(err)
 	}
+}
+
+func newLogger(cfg config.LogConfig) *slog.Logger {
+	level := slog.LevelInfo
+	switch strings.ToLower(cfg.Level) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+	if strings.EqualFold(cfg.Format, "json") {
+		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+	}
+	return slog.New(slog.NewTextHandler(os.Stdout, opts))
 }

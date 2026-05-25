@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -33,18 +33,14 @@ type BTClient struct {
 	cfg     config.ResourceConfig
 	browser *rod.Browser
 	debug   bool
-	re      *regexp.Regexp
 }
 
 var _ Provider = (*BTClient)(nil)
 
 func NewBTClient(cfg config.ResourceConfig) *BTClient {
-	resPattern := strings.Join(cfg.Profiles, "|")
-	pattern := fmt.Sprintf(`^中字(%s)$`, resPattern)
 	return &BTClient{
 		cfg:   cfg,
 		debug: false,
-		re:    regexp.MustCompile(pattern),
 	}
 }
 
@@ -55,7 +51,7 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 
 	cookies, err := loadCookies()
 	if err != nil {
-		log.Printf("[bt] 加载 cookie 失败: %v\n", err)
+		slog.Warn("加载 cookie 失败", "component", "bt", "err", err)
 		return c.fullLogin(ctx)
 	}
 	if len(cookies) == 0 {
@@ -69,17 +65,17 @@ func (c *BTClient) EnsureSession(ctx context.Context) error {
 	if err := c.verifySession(ctx); err == nil {
 		latestCookies, getErr := c.browser.GetCookies()
 		if getErr != nil {
-			log.Printf("[bt] 登录成功，但刷新 cookie 失败: %v\n", getErr)
+			slog.Warn("校验成功后刷新 cookie 失败", "component", "bt", "err", getErr)
 			return nil
 		}
 		if len(latestCookies) > 0 {
 			saveCookies(latestCookies)
 		}
-		log.Println("[bt] 登录成功，cookie 已更新")
+		slog.Info("登录校验通过", "component", "bt")
 		return nil
 	}
 
-	log.Println("[bt] cookie 可能失效，执行完整登录")
+	slog.Warn("cookie 可能失效，执行完整登录", "component", "bt")
 	return c.fullLogin(ctx)
 }
 
@@ -292,7 +288,7 @@ func (c *BTClient) fullLogin(ctx context.Context) error {
 	}
 	saveCookies(cookies)
 
-	log.Println("[bt] 登录成功，cookie 已缓存")
+	slog.Info("登录成功，cookie 已缓存", "component", "bt")
 	return nil
 }
 
@@ -336,13 +332,13 @@ func (c *BTClient) verifySession(ctx context.Context) error {
 		Race().
 		Element("#user_load > div").
 		Handle(func(e *rod.Element) error {
-			log.Println("[bt] 校验登录状态: 已登录")
+			slog.Debug("校验登录状态", "state", "logged_in", "component", "bt")
 			state = "logged_in"
 			return nil
 		}).
 		Element("#user_load > a").
 		Handle(func(e *rod.Element) error {
-			log.Println("[bt] 校验登录状态: 未登录")
+			slog.Debug("校验登录状态", "state", "need_login", "component", "bt")
 			state = "need_login"
 			return nil
 		}).
@@ -377,12 +373,14 @@ func loadCookies() ([]*proto.NetworkCookie, error) {
 func saveCookies(cookies []*proto.NetworkCookie) {
 	data, err := json.MarshalIndent(cookies, "", "  ")
 	if err != nil {
-		log.Printf("[bt] 编码 cookie: %v\n", err)
+		slog.Error("编码 cookie 失败", "component", "bt", "err", err)
 		return
 	}
 	if err := os.WriteFile(cookieFile, data, 0o600); err != nil {
-		log.Printf("[bt] 写入 cookie 文件: %v\n", err)
+		slog.Error("写入 cookie 文件失败", "component", "bt", "err", err)
 	}
+
+	slog.Info("写入cookie文件成功", "component", "bt")
 }
 
 func hasCookie(cookies []*proto.NetworkCookie, name string) bool {
@@ -510,9 +508,8 @@ func (c *BTClient) getTorrents(ctx context.Context, rows rod.Elements, profile s
 				})
 			}
 		} else {
-			log.Printf("[bt] 无效的href类型: %s\n", *href)
+			slog.Warn("非预期的 href 类型", "component", "bt", "href", *href)
 		}
-
 	}
 
 	return ts, nil
