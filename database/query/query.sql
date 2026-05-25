@@ -120,6 +120,124 @@ ORDER BY
   m.size_mb DESC
 LIMIT 1;
 
+-- name: GetPendingMovies :many
+SELECT id
+FROM medias
+WHERE type = 'movie'
+  AND status IN ('wanted', 'monitoring');
+
+-- name: GetSeasonDownloadStats :many
+SELECT
+  s.id AS season_id,
+  COUNT(e.id) AS total_count,
+  COUNT(CASE WHEN e.status = 'pending' THEN 1 END) AS missing_count
+FROM episodes e
+JOIN seasons s ON s.id = e.season_id
+JOIN medias m ON m.id = s.series_id
+WHERE m.type IN ('tv', 'anime')
+  AND m.status IN ('wanted', 'monitoring')
+GROUP BY s.id
+HAVING COUNT(CASE WHEN e.status = 'pending' THEN 1 END) > 0;
+
+-- name: GetSeasonMagnetCandidates :many
+SELECT
+  m.id,
+  m.magnet_url,
+  m.seeder,
+  COUNT(me.episode_id) AS total_cover_count,
+  COUNT(CASE WHEN e.status = 'pending' THEN 1 END) AS missing_hit_count,
+  COUNT(CASE WHEN e.status = 'downloaded' THEN 1 END) AS extra_count,
+  COALESCE(pp.priority, 9223372036854775807) AS profile_priority
+FROM magnets m
+JOIN magnet_episodes me ON me.magnet_id = m.id
+JOIN episodes e ON e.id = me.episode_id
+LEFT JOIN profile_priorities pp
+  ON pp.profile = m.profile
+WHERE
+  m.season_id = @season_id
+  AND m.status = 'available'
+GROUP BY m.id
+HAVING COUNT(CASE WHEN e.status = 'pending' THEN 1 END) > 0;
+
+-- name: CreateDownload :execrows
+INSERT INTO downloads (magnet_id)
+SELECT @magnet_id
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM downloads
+  WHERE magnet_id = @magnet_id
+    AND status IN ('queued', 'downloading')
+);
+
+-- name: GetQueuedDownloads :many
+SELECT
+  d.id,
+  d.magnet_id,
+  m.magnet_url
+FROM downloads d
+JOIN magnets m ON m.id = d.magnet_id
+WHERE d.status = 'queued';
+
+-- name: MarkDownloadStarted :execrows
+UPDATE downloads
+SET
+  qb_hash = ?2,
+  status = 'downloading',
+  error = NULL
+WHERE id = ?1;
+
+-- name: MarkDownloadFailed :execrows
+UPDATE downloads
+SET
+  status = 'failed',
+  error = ?2
+WHERE id = ?1;
+
+-- name: MarkDownloadCompleted :execrows
+UPDATE downloads
+SET status = 'completed'
+WHERE id = ?1;
+
+-- name: MarkMovieDownloadingByMagnet :execrows
+UPDATE medias
+SET status = 'downloading'
+WHERE id = (
+  SELECT media_id
+  FROM magnets m
+  WHERE m.id = ?1
+)
+  AND type = 'movie'
+  AND status IN ('wanted', 'monitoring');
+
+-- name: MarkEpisodesDownloadingByMagnet :execrows
+UPDATE episodes
+SET status = 'downloading'
+WHERE id IN (
+  SELECT episode_id
+  FROM magnet_episodes
+  WHERE magnet_id = ?1
+)
+  AND status = 'pending';
+
+-- name: MarkMovieCompletedByMagnet :execrows
+UPDATE medias
+SET status = 'completed'
+WHERE id = (
+  SELECT media_id
+  FROM magnets m
+  WHERE m.id = ?1
+)
+  AND type = 'movie';
+
+-- name: MarkEpisodesDownloadedByMagnet :execrows
+UPDATE episodes
+SET status = 'downloaded'
+WHERE id IN (
+  SELECT episode_id
+  FROM magnet_episodes
+  WHERE magnet_id = ?1
+);
+
 
 -- name: UpsertMagnets :one
 INSERT INTO magnets (

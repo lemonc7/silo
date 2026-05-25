@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+const createDownload = `-- name: CreateDownload :execrows
+INSERT INTO downloads (magnet_id)
+SELECT ?1
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM downloads
+  WHERE magnet_id = ?1
+    AND status IN ('queued', 'downloading')
+)
+`
+
+func (q *Queries) CreateDownload(ctx context.Context, magnetID int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, createDownload, magnetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getBestMagnetOfMovie = `-- name: GetBestMagnetOfMovie :one
 SELECT
   m.id,
@@ -207,6 +226,180 @@ func (q *Queries) GetOutOfSyncTVs(ctx context.Context) ([]GetOutOfSyncTVsRow, er
 	return items, nil
 }
 
+const getPendingMovies = `-- name: GetPendingMovies :many
+SELECT id
+FROM medias
+WHERE type = 'movie'
+  AND status IN ('wanted', 'monitoring')
+`
+
+func (q *Queries) GetPendingMovies(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, getPendingMovies)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getQueuedDownloads = `-- name: GetQueuedDownloads :many
+SELECT
+  d.id,
+  d.magnet_id,
+  m.magnet_url
+FROM downloads d
+JOIN magnets m ON m.id = d.magnet_id
+WHERE d.status = 'queued'
+`
+
+type GetQueuedDownloadsRow struct {
+	ID        int64  `json:"id"`
+	MagnetID  int64  `json:"magnet_id"`
+	MagnetUrl string `json:"magnet_url"`
+}
+
+func (q *Queries) GetQueuedDownloads(ctx context.Context) ([]GetQueuedDownloadsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getQueuedDownloads)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetQueuedDownloadsRow
+	for rows.Next() {
+		var i GetQueuedDownloadsRow
+		if err := rows.Scan(&i.ID, &i.MagnetID, &i.MagnetUrl); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSeasonDownloadStats = `-- name: GetSeasonDownloadStats :many
+SELECT
+  s.id AS season_id,
+  COUNT(e.id) AS total_count,
+  COUNT(CASE WHEN e.status = 'pending' THEN 1 END) AS missing_count
+FROM episodes e
+JOIN seasons s ON s.id = e.season_id
+JOIN medias m ON m.id = s.series_id
+WHERE m.type IN ('tv', 'anime')
+  AND m.status IN ('wanted', 'monitoring')
+GROUP BY s.id
+HAVING COUNT(CASE WHEN e.status = 'pending' THEN 1 END) > 0
+`
+
+type GetSeasonDownloadStatsRow struct {
+	SeasonID     int64 `json:"season_id"`
+	TotalCount   int64 `json:"total_count"`
+	MissingCount int64 `json:"missing_count"`
+}
+
+func (q *Queries) GetSeasonDownloadStats(ctx context.Context) ([]GetSeasonDownloadStatsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getSeasonDownloadStats)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSeasonDownloadStatsRow
+	for rows.Next() {
+		var i GetSeasonDownloadStatsRow
+		if err := rows.Scan(&i.SeasonID, &i.TotalCount, &i.MissingCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSeasonMagnetCandidates = `-- name: GetSeasonMagnetCandidates :many
+SELECT
+  m.id,
+  m.magnet_url,
+  m.seeder,
+  COUNT(me.episode_id) AS total_cover_count,
+  COUNT(CASE WHEN e.status = 'pending' THEN 1 END) AS missing_hit_count,
+  COUNT(CASE WHEN e.status = 'downloaded' THEN 1 END) AS extra_count,
+  COALESCE(pp.priority, 9223372036854775807) AS profile_priority
+FROM magnets m
+JOIN magnet_episodes me ON me.magnet_id = m.id
+JOIN episodes e ON e.id = me.episode_id
+LEFT JOIN profile_priorities pp
+  ON pp.profile = m.profile
+WHERE
+  m.season_id = ?1
+  AND m.status = 'available'
+GROUP BY m.id
+HAVING COUNT(CASE WHEN e.status = 'pending' THEN 1 END) > 0
+`
+
+type GetSeasonMagnetCandidatesRow struct {
+	ID              int64  `json:"id"`
+	MagnetUrl       string `json:"magnet_url"`
+	Seeder          int64  `json:"seeder"`
+	TotalCoverCount int64  `json:"total_cover_count"`
+	MissingHitCount int64  `json:"missing_hit_count"`
+	ExtraCount      int64  `json:"extra_count"`
+	ProfilePriority int64  `json:"profile_priority"`
+}
+
+func (q *Queries) GetSeasonMagnetCandidates(ctx context.Context, seasonID *int64) ([]GetSeasonMagnetCandidatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getSeasonMagnetCandidates, seasonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSeasonMagnetCandidatesRow
+	for rows.Next() {
+		var i GetSeasonMagnetCandidatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MagnetUrl,
+			&i.Seeder,
+			&i.TotalCoverCount,
+			&i.MissingHitCount,
+			&i.ExtraCount,
+			&i.ProfilePriority,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSeasonPages = `-- name: GetSeasonPages :many
 SELECT
   s.id AS season_id,
@@ -316,6 +509,139 @@ func (q *Queries) GetSeasonsWithoutPage(ctx context.Context, provider string) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const markDownloadCompleted = `-- name: MarkDownloadCompleted :execrows
+UPDATE downloads
+SET status = 'completed'
+WHERE id = ?1
+`
+
+func (q *Queries) MarkDownloadCompleted(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markDownloadCompleted, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markDownloadFailed = `-- name: MarkDownloadFailed :execrows
+UPDATE downloads
+SET
+  status = 'failed',
+  error = ?2
+WHERE id = ?1
+`
+
+type MarkDownloadFailedParams struct {
+	ID    int64   `json:"id"`
+	Error *string `json:"error"`
+}
+
+func (q *Queries) MarkDownloadFailed(ctx context.Context, arg MarkDownloadFailedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markDownloadFailed, arg.ID, arg.Error)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markDownloadStarted = `-- name: MarkDownloadStarted :execrows
+UPDATE downloads
+SET
+  qb_hash = ?2,
+  status = 'downloading',
+  error = NULL
+WHERE id = ?1
+`
+
+type MarkDownloadStartedParams struct {
+	ID     int64   `json:"id"`
+	QbHash *string `json:"qb_hash"`
+}
+
+func (q *Queries) MarkDownloadStarted(ctx context.Context, arg MarkDownloadStartedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markDownloadStarted, arg.ID, arg.QbHash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markEpisodesDownloadedByMagnet = `-- name: MarkEpisodesDownloadedByMagnet :execrows
+UPDATE episodes
+SET status = 'downloaded'
+WHERE id IN (
+  SELECT episode_id
+  FROM magnet_episodes
+  WHERE magnet_id = ?1
+)
+`
+
+func (q *Queries) MarkEpisodesDownloadedByMagnet(ctx context.Context, magnetID int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markEpisodesDownloadedByMagnet, magnetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markEpisodesDownloadingByMagnet = `-- name: MarkEpisodesDownloadingByMagnet :execrows
+UPDATE episodes
+SET status = 'downloading'
+WHERE id IN (
+  SELECT episode_id
+  FROM magnet_episodes
+  WHERE magnet_id = ?1
+)
+  AND status = 'pending'
+`
+
+func (q *Queries) MarkEpisodesDownloadingByMagnet(ctx context.Context, magnetID int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markEpisodesDownloadingByMagnet, magnetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markMovieCompletedByMagnet = `-- name: MarkMovieCompletedByMagnet :execrows
+UPDATE medias
+SET status = 'completed'
+WHERE id = (
+  SELECT media_id
+  FROM magnets m
+  WHERE m.id = ?1
+)
+  AND type = 'movie'
+`
+
+func (q *Queries) MarkMovieCompletedByMagnet(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMovieCompletedByMagnet, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const markMovieDownloadingByMagnet = `-- name: MarkMovieDownloadingByMagnet :execrows
+UPDATE medias
+SET status = 'downloading'
+WHERE id = (
+  SELECT media_id
+  FROM magnets m
+  WHERE m.id = ?1
+)
+  AND type = 'movie'
+  AND status IN ('wanted', 'monitoring')
+`
+
+func (q *Queries) MarkMovieDownloadingByMagnet(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markMovieDownloadingByMagnet, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertEpisode = `-- name: UpsertEpisode :execrows

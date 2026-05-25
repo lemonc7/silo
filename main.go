@@ -11,6 +11,7 @@ import (
 	"github.com/lemonc7/silo/catalog"
 	"github.com/lemonc7/silo/config"
 	"github.com/lemonc7/silo/database"
+	"github.com/lemonc7/silo/download"
 	"github.com/lemonc7/silo/release"
 )
 
@@ -42,11 +43,16 @@ func main() {
 	if err := rl.EnsureSession(ctx); err != nil {
 		panic(err)
 	}
+	qb := download.NewQBClient(cfg.Downloader)
+	if err := qb.Login(); err != nil {
+		panic(err)
+	}
 
 	srv := app.NewService(
 		db,
 		catalog.NewHTTPClient(cfg.TMDB),
 		rl,
+		qb,
 	)
 
 	if err := srv.InitProfilePriority(ctx, cfg.Resource.Profiles); err != nil {
@@ -73,6 +79,12 @@ func main() {
 		panic(err)
 	}
 	if err := srv.SyncSeriesMagnets(ctx); err != nil {
+		panic(err)
+	}
+	if err := srv.CreateDownloadTasks(ctx); err != nil {
+		panic(err)
+	}
+	if err := srv.SubmitQueuedDownloads(ctx); err != nil {
 		panic(err)
 	}
 }
