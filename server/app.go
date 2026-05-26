@@ -5,10 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -59,7 +56,7 @@ func InitApp(cfg config.Config, service *service.Service) *App {
 	}
 }
 
-func (a *App) Run() {
+func (a *App) Run(ctx context.Context) {
 	slog.Info("HTTP服务已启动",
 		slog.String("component", "http server"),
 		slog.Int("port", a.cfg.Server.Port),
@@ -75,9 +72,7 @@ func (a *App) Run() {
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	<-quit
+	<-ctx.Done()
 
 	slog.Info("收到退出信号, 正在关闭HTTP服务...",
 		slog.String("component", "http server"))

@@ -14,6 +14,7 @@ type Config struct {
 	Downloader DownloaderConfig `yaml:"downloader"`
 	Log        LogConfig        `yaml:"log"`
 	Server     ServerConfig     `yaml:"server"`
+	Worker     WorkerConfig     `yaml:"worker"`
 }
 
 type TMDBConfig struct {
@@ -68,6 +69,14 @@ type ServerConfig struct {
 	Port         int           `yaml:"port" env:"SERVER_PORT" env-default:"8080"`
 	ReadTimeout  time.Duration `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT" env-default:"30s"`
 	WriteTimeout time.Duration `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT" env-default:"30s"`
+}
+
+type WorkerConfig struct {
+	TMDBSpec     string        `yaml:"tmdb_spec" env:"WORKER_TMDB_SPEC" env-default:"0 2 * * *"`
+	ReleaseSpec  string        `yaml:"release_spec" env:"WORKER_RELEASE_SPEC" env-default:"@every 6h"`
+	DownloadSpec string        `yaml:"download_spec" env:"WORKER_DOWNLOAD_SPEC" env-default:"@every 30m"`
+	RunOnStart   bool          `yaml:"run_on_start" env:"WORKER_RUN_ON_START" env-default:"true"`
+	Timeout      time.Duration `yaml:"timeout" env:"WORKER_TIMEOUT" env-default:"30m"`
 }
 
 func LoadConfig(path string) (*Config, error) {

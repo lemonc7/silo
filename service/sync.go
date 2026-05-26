@@ -32,6 +32,77 @@ func NewService(db *sql.DB, catalog catalog.Provider, release release.Provider, 
 	}
 }
 
+func (s *Service) SyncAll(ctx context.Context, profiles []string) error {
+	if err := s.SyncCatalog(ctx); err != nil {
+		return err
+	}
+	if err := s.SyncReleases(ctx, profiles); err != nil {
+		return err
+	}
+	if err := s.SyncDownloads(ctx, profiles); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Service) SyncCatalog(ctx context.Context) error {
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "同步媒体", run: s.SyncMedia},
+		{name: "同步季", run: s.SyncSeason},
+		{name: "同步集", run: s.SyncEpisode},
+	}
+
+	return runSyncSteps(ctx, steps)
+}
+
+func (s *Service) SyncReleases(ctx context.Context, profiles []string) error {
+	if err := s.release.EnsureSession(ctx); err != nil {
+		return fmt.Errorf("校验资源站登录状态: %w", err)
+	}
+
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "同步标签优先级", run: func(ctx context.Context) error { return s.InitProfilePriority(ctx, profiles) }},
+		{name: "同步电影详情页", run: s.SyncMoviePage},
+		{name: "同步剧集详情页", run: s.SyncSeriesPage},
+		{name: "同步电影磁力链接", run: s.SyncMovieMagnets},
+		{name: "同步剧集磁力链接", run: s.SyncSeriesMagnets},
+	}
+
+	return runSyncSteps(ctx, steps)
+}
+
+func (s *Service) SyncDownloads(ctx context.Context, profiles []string) error {
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "同步标签优先级", run: func(ctx context.Context) error { return s.InitProfilePriority(ctx, profiles) }},
+		{name: "创建下载任务", run: s.CreateDownloadTasks},
+		{name: "提交下载任务", run: s.SubmitQueuedDownloads},
+	}
+
+	return runSyncSteps(ctx, steps)
+}
+
+func runSyncSteps(ctx context.Context, steps []struct {
+	name string
+	run  func(context.Context) error
+}) error {
+	for _, step := range steps {
+		if err := step.run(ctx); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+	}
+
+	return nil
+}
+
 func (s *Service) InitProfilePriority(ctx context.Context, profiles []string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

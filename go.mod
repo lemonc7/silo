@@ -9,6 +9,7 @@ require (
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/lemonc7/episodex v0.2.0
 	github.com/lemonc7/zest v0.5.7
+	github.com/robfig/cron/v3 v3.0.1
 	modernc.org/sqlite v1.50.1
 )
 

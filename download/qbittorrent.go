@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/lemonc7/silo/config"
 )
@@ -17,6 +18,7 @@ type QBClient struct {
 	username string
 	password string
 	sid      string
+	mu       sync.Mutex
 }
 
 func NewQBClient(cfg config.DownloaderConfig) *QBClient {
@@ -28,12 +30,37 @@ func NewQBClient(cfg config.DownloaderConfig) *QBClient {
 	}
 }
 
-func (q *QBClient) Login() error {
+func (q *QBClient) AddMagnet(ctx context.Context, magnetURL, savePath string) error {
+	if err := q.Login(ctx); err != nil {
+		return err
+	}
+
+	if err := q.addMagnet(ctx, magnetURL, savePath); err != nil {
+		if !isAuthError(err) {
+			return err
+		}
+		q.clearSession()
+		if err := q.Login(ctx); err != nil {
+			return err
+		}
+		return q.addMagnet(ctx, magnetURL, savePath)
+	}
+	return nil
+}
+
+func (q *QBClient) Login(ctx context.Context) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.sid != "" {
+		return nil
+	}
+
 	data := url.Values{}
 	data.Set("username", q.username)
 	data.Set("password", q.password)
 
-	req, err := http.NewRequest("POST", q.baseURL+"/api/v2/auth/login", strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", q.baseURL+"/api/v2/auth/login", strings.NewReader(data.Encode()))
 	if err != nil {
 		return err
 	}
@@ -62,7 +89,19 @@ func (q *QBClient) Login() error {
 	return nil
 }
 
-func (q *QBClient) AddMagnet(ctx context.Context, magnetURL, savePath string) error {
+func (q *QBClient) clearSession() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.sid = ""
+}
+
+func (q *QBClient) sessionID() string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.sid
+}
+
+func (q *QBClient) addMagnet(ctx context.Context, magnetURL, savePath string) error {
 	data := url.Values{}
 	data.Set("urls", magnetURL)
 	data.Set("savepath", savePath)
@@ -72,8 +111,8 @@ func (q *QBClient) AddMagnet(ctx context.Context, magnetURL, savePath string) er
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if q.sid != "" {
-		req.Header.Set("Cookie", "SID="+q.sid)
+	if sid := q.sessionID(); sid != "" {
+		req.Header.Set("Cookie", "SID="+sid)
 	}
 
 	resp, err := q.client.Do(req)
@@ -83,7 +122,21 @@ func (q *QBClient) AddMagnet(ctx context.Context, magnetURL, savePath string) er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("qB add magnet: %s", resp.Status)
+		return qbStatusError{statusCode: resp.StatusCode, status: resp.Status}
 	}
 	return nil
+}
+
+type qbStatusError struct {
+	statusCode int
+	status     string
+}
+
+func (e qbStatusError) Error() string {
+	return fmt.Sprintf("qB add magnet: %s", e.status)
+}
+
+func isAuthError(err error) bool {
+	e, ok := err.(qbStatusError)
+	return ok && (e.statusCode == http.StatusUnauthorized || e.statusCode == http.StatusForbidden)
 }
