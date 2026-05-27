@@ -345,8 +345,8 @@ SELECT
   m.seeder,
   COUNT(me.episode_id) AS total_cover_count,
   COUNT(CASE WHEN e.status = 'pending' THEN 1 END) AS missing_hit_count,
-  COUNT(CASE WHEN e.status = 'downloaded' THEN 1 END) AS extra_count,
-  COALESCE(pp.priority, 9223372036854775807) AS profile_priority
+  COUNT(CASE WHEN e.status IN ('downloading', 'downloaded') THEN 1 END) AS extra_count,
+  COALESCE(pp.priority, 999999) AS profile_priority
 FROM magnets m
 JOIN magnet_episodes me ON me.magnet_id = m.id
 JOIN episodes e ON e.id = me.episode_id

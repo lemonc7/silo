@@ -8,6 +8,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/lemonc7/silo/download"
 	"github.com/lemonc7/silo/repo"
 )
 
@@ -38,8 +39,7 @@ func (s *Service) CreateDownloadTasks(ctx context.Context) error {
 		return fmt.Errorf("获取待下载季统计: %w", err)
 	}
 	for _, season := range seasons {
-		seasonID := season.SeasonID
-		candidates, err := s.repo.GetSeasonMagnetCandidates(ctx, &seasonID)
+		candidates, err := s.repo.GetSeasonMagnetCandidates(ctx, &season.SeasonID)
 		if err != nil {
 			slog.Warn("查询季候选磁力链接失败", "component", "db", "season_id", season.SeasonID, "err", err)
 			continue
@@ -62,23 +62,29 @@ func sortSeasonMagnetCandidates(items []repo.GetSeasonMagnetCandidatesRow, missi
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
 
+		// 重复覆盖正在下载/已下载的集越少越好，优先避免重复下载
+		if a.ExtraCount != b.ExtraCount {
+			return a.ExtraCount < b.ExtraCount
+		}
+		// 下载后还剩多少缺集，越少越好
 		aMissingLeft := missingCount - a.MissingHitCount
 		bMissingLeft := missingCount - b.MissingHitCount
 		if aMissingLeft != bMissingLeft {
 			return aMissingLeft < bMissingLeft
 		}
-		if a.ExtraCount != b.ExtraCount {
-			return a.ExtraCount < b.ExtraCount
-		}
+		// 覆盖缺集越多越好
 		if a.MissingHitCount != b.MissingHitCount {
 			return a.MissingHitCount > b.MissingHitCount
 		}
+		// 总覆盖集数越少越好，避免不必要的合集资源
 		if a.TotalCoverCount != b.TotalCoverCount {
 			return a.TotalCoverCount < b.TotalCoverCount
 		}
+		// profile 优先级越小越靠前
 		if a.ProfilePriority != b.ProfilePriority {
 			return a.ProfilePriority < b.ProfilePriority
 		}
+		// 做种数越多越好
 		return a.Seeder > b.Seeder
 	})
 }
@@ -122,6 +128,18 @@ func (s *Service) SubmitQueuedDownloads(ctx context.Context) error {
 	}
 
 	for _, item := range items {
+		hash, err := download.ExtractInfoHash(item.MagnetUrl)
+		if err != nil {
+			if _, markErr := s.repo.MarkDownloadFailed(ctx, repo.MarkDownloadFailedParams{
+				ID:    item.ID,
+				Error: new(err.Error()),
+			}); markErr != nil {
+				slog.Warn("标记下载任务失败状态失败", "component", "db", "download_id", item.ID, "err", markErr)
+			}
+			slog.Warn("解析 qB hash 失败", "component", "download", "download_id", item.ID, "magnet_id", item.MagnetID, "err", err)
+			continue
+		}
+
 		if err := s.down.AddMagnet(ctx, item.MagnetUrl, ""); err != nil {
 			if _, markErr := s.repo.MarkDownloadFailed(ctx, repo.MarkDownloadFailedParams{
 				ID:    item.ID,
@@ -135,7 +153,7 @@ func (s *Service) SubmitQueuedDownloads(ctx context.Context) error {
 
 		if _, err := s.repo.MarkDownloadStarted(ctx, repo.MarkDownloadStartedParams{
 			ID:     item.ID,
-			QbHash: nil,
+			QbHash: &hash,
 		}); err != nil {
 			return fmt.Errorf("标记下载任务已开始: %w", err)
 		}
