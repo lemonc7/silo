@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/lemonc7/silo/compare/v0.3.2...v0.4.0) (2026-05-27)
+
+
+### Features
+
+* 新增http后端服务 ([b9de0cb](https://github.com/lemonc7/silo/commit/b9de0cb06b60b8901fe8ffe6bcc076910484f9de))
+* 设置cron控制后台定时任务协程，主程序启动HTTP后端服务 ([7129983](https://github.com/lemonc7/silo/commit/7129983748b07c4b7aaebe8a5e2412ae7738dbe3))
+
+
+### Bug Fixes
+
+* 优化代码逻辑，增加解析qb_hash的功能 ([9e218ed](https://github.com/lemonc7/silo/commit/9e218ed66f25062822ddb71815f500a0c4929e1e))
+* 增加添加下载磁力链接的逻辑，暂存 ([e9ef7ec](https://github.com/lemonc7/silo/commit/e9ef7ec0b1042e72bebfae531adab7c0219da37a))
+* 调整日志格式 ([f474ed8](https://github.com/lemonc7/silo/commit/f474ed8cbd40af98d34201474e77fcb7d11c4a01))
+
 ## [0.3.2](https://github.com/lemonc7/silo/compare/v0.3.1...v0.3.2) (2026-05-24)
 
 
